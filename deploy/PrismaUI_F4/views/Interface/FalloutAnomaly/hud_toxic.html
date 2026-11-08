@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"><title>Vital status</title><link rel="stylesheet" href="hud_status.css"><script src="hud_core.js"></script></head>
+<body class="theme-phosphor"><div id="root">
+<div class="status fallback-only" id="health" role="img" aria-label="HEALTH"><div class="core" id="healthCore" style="--c:#93e8a4"></div></div>
+<div class="status fallback-only" id="stamina" role="img" aria-label="AP"><div class="core" id="staminaCore" style="--c:#f2c46a"></div></div>
+<div class="status fallback-only" id="rads" role="img" aria-label="RADS"><div class="core" id="radsCore" style="--c:#ff7052"></div></div>
+<div class="status" id="tissue" role="img" aria-label="TISSUE"><div class="core" id="tissueCore" style="--c:#ff7052"></div></div>
+</div><script>
+
+var root=document.getElementById('root'),_visState=false,_preview=false,_lastData=null,_repVis=null;
+function pct(n){return Math.round(Math.max(0,Math.min(100,+n||0)));}
+var PHOS_CORES={health:['<path d="M9.6 4h4.8v5.6H20v4.8h-5.6V20H9.6v-5.6H4V9.6h5.6z"/>','HP',true],stamina:['<path d="M13.6 3L6 13.4h5.2L10.2 21 18 10.4h-5.3z"/>','AP',true],rads:['<circle cx="12" cy="12" r="1.7"/><path d="M10.30 9.06L7.40 4.03A9.2 9.2 0 0 1 16.60 4.03L13.70 9.06A3.4 3.4 0 0 0 10.30 9.06z"/><path d="M15.40 12.00L21.20 12.00A9.2 9.2 0 0 1 16.60 19.97L13.70 14.94A3.4 3.4 0 0 0 15.40 12.00z"/><path d="M10.30 14.94L7.40 19.97A9.2 9.2 0 0 1 2.80 12.00L8.60 12.00A3.4 3.4 0 0 0 10.30 14.94z"/>','RAD',true],tissue:['<path d="M7 12a5 5 0 1 0 10 0a5 5 0 1 0 -10 0"/><path d="M12 7v-4"/><path d="M11 3h2"/><path d="M15.536 8.464l2.828 -2.828"/><path d="M17.657 4.929l1.414 1.414"/><path d="M17 12h4"/><path d="M21 11v2"/><path d="M15.535 15.536l2.829 2.828"/><path d="M19.071 17.657l-1.414 1.414"/><path d="M12 17v4"/><path d="M13 21h-2"/><path d="M8.465 15.536l-2.829 2.828"/><path d="M6.343 19.071l-1.413 -1.414"/><path d="M7 12h-4"/><path d="M3 13v-2"/><path d="M8.464 8.464l-2.828 -2.828"/><path d="M4.929 6.343l1.414 -1.413"/>','TISSUE']};
+var cores={};
+Object.keys(PHOS_CORES).forEach(function(id){var c=PHOS_CORES[id];cores[id]=PhosCore.build(document.getElementById(id+'Core'),c[0],c[1],c[2]);});
+function vital(id,severity,description){var e=document.getElementById(id);e.className='status '+severity;e.title=description;e.setAttribute('aria-label',description);}
+function renderToxic(d){
+ var fallback=!!d.fallback,t=Math.max(0,Math.min(1000,+d.tissue||0)),health=+d.healthMax>0?(+d.health||0)/d.healthMax*100:0,ap=+d.apMax>0?(+d.ap||0)/d.apMax*100:0,radsFrac=(+d.rads||0)/Math.max(1,+d.radsMax||1000);
+ ['health','stamina','rads'].forEach(function(id){document.getElementById(id).hidden=!fallback;});
+ vital('health',health<=25?'danger':health<=50?'warn':'','Health remaining');
+ vital('stamina',ap<=20?'warn':'','Action points remaining');
+ vital('rads',(+d.rads||0)>=600?'danger':'','Radiation blocks maximum health');
+ vital('tissue',t>=600?'danger':t>=150?'warn':'','Tissue damage; permanent scarring '+Math.round(+d.permanentTissue||0));
+ PhosCore.set(cores.health,health/100,pct(health)+'%',1,health<=25?'crit':'');
+ PhosCore.set(cores.stamina,ap/100,pct(ap)+'%',1,ap<=20?'warn':'');
+ PhosCore.set(cores.rads,radsFrac>0?Math.max(.03,radsFrac):0,pct(radsFrac*100)+'%',radsFrac,(+d.rads||0)>=600?'crit':'');
+ PhosCore.set(cores.tissue,t/1000,pct(t/10)+'%',1,t>=600?'crit':t>=150?'warn':'');
+ var show=fallback||t>0;_visState=show;root.classList.toggle('visible',show||_preview);if((show||_preview)!==_repVis){_repVis=show||_preview;window.reportVisibility(JSON.stringify({id:WIDGET_ID,visible:_repVis}));}
+}
+window.updateToxic=function(json){try{var d=typeof json==='string'?JSON.parse(json):json;if(!d||typeof d!=='object')return;_lastData=d;renderToxic(d);}catch(e){}};
+window.setEditorPreview=function(json){_preview=json==='1'||json===1||json===true;if(_preview)renderToxic({fallback:true,health:180,healthMax:300,ap:80,apMax:100,rads:200,tissue:150});else if(_lastData)renderToxic(_lastData);else root.classList.remove('visible');};
+window.setTheme=function(){if(_preview)window.setEditorPreview(1);else if(_lastData)renderToxic(_lastData);};
+
+var WIDGET_ID='rad_toxic';
+var DEF={xf:22/1920,yf:638/1080,wf:360/1920,hf:98/1080};
+var _want=null,_lastW=0,_lastH=0;
+function flushPos(){
+  if(!_want)return;
+  var W=window.innerWidth,H=window.innerHeight;
+  if(!(W>1)||!(H>1))return;
+  if(W===_lastW&&H===_lastH)return;
+  var K=PhosCore.fit(W,H);
+  var r=document.getElementById('root');
+  r.style.left=(_want.xf*W)+'px';r.style.top=(_want.yf*H)+'px';
+  var explicitSize=_want.w!==null&&_want.h!==null;
+  r.style.width=explicitSize?Math.max(40,(_want.w<=1?_want.w*W:_want.w)/K)+'px':'';
+  r.style.height=explicitSize?Math.max(20,(_want.h<=1?_want.h*H:_want.h)/K)+'px':'';
+  r.style.setProperty('--s',(explicitSize?1:_want.s)*K);r.style.setProperty('--r',(_want.r||0)+'deg');
+  window.reportPosition(JSON.stringify({id:WIDGET_ID,x:_want.xf,y:_want.yf,s:_want.s,r:_want.r||0}));
+  _lastW=W;_lastH=H;
+}
+function applyPos(xf,yf,s,rot,w,h){
+  _want={xf:xf,yf:yf,s:s,r:rot||0,
+    w:(typeof w==='number'&&isFinite(w)&&w>0)?w:null,
+    h:(typeof h==='number'&&isFinite(h)&&h>0)?h:null};
+  _lastW=0;_lastH=0;
+  flushPos();
+}
+try{new ResizeObserver(function(){flushPos();}).observe(document.documentElement);}catch(e){}
+var _posSet=false;
+window.setHUDPosition=function(json){
+  _posSet=true;
+  try{var p=(typeof json==='string')?JSON.parse(json):json;
+    applyPos(p.x,p.y,(typeof p.s==='number'?p.s:1),(typeof p.r==='number'?p.r:0),
+      (typeof p.w==='number'?p.w:null),(typeof p.h==='number'?p.h:null));}catch(e){}
+};
+window.setLocalHUDLayout=function(json){
+  try{var p=(typeof json==='string')?JSON.parse(json):json;applyPos(p.x,p.y,p.s,p.r);_posSet=true;document.getElementById('root').style.display=p.hidden?'none':'';}catch(e){}
+};
+window.releaseLocalHUDLayout=function(){document.getElementById('root').style.display='';};
+window.reportPosition   =window.reportPosition   ||function(){};
+window.reportVisibility =window.reportVisibility ||function(){};
+setTimeout(function(){if(!_posSet)applyPos(DEF.xf,DEF.yf,1,0);},50);
+</script>
+</body>
+</html>
