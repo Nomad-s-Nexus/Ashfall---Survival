@@ -1,0 +1,21 @@
+{
+  "_comment": "Display names for RadOutbreak.esp records the FO4IDE writer cannot name. Run: python tools/patch_full_names.py --plugin deploy/RadOutbreak.esp --manifest tools/rad_outbreak_names.json",
+  "names": {
+    "RadOutbreak_DoctorStation": "Doctor Station",
+    "RadOutbreak_Scanner": "Pathogen Scanner",
+    "RadOutbreak_CompanionSickMgef1": "Companion Sick (Early)",
+    "RadOutbreak_CompanionSickSpell1": "Companion Sick (Early)",
+    "RadOutbreak_CompanionSickMgef2": "Companion Sick (Worsening)",
+    "RadOutbreak_CompanionSickSpell2": "Companion Sick (Worsening)",
+    "RadOutbreak_CompanionSickMgef3": "Companion Sick (Critical)",
+    "RadOutbreak_CompanionSickSpell3": "Companion Sick (Critical)"
+  },
+  "descriptions": {
+    "RadOutbreak_CompanionSickMgef1": "A companion is ill. Give them RadAway (early), Addictol (worsening) or a cure.",
+    "RadOutbreak_CompanionSickSpell1": "A companion is ill. Give them RadAway (early), Addictol (worsening) or a cure.",
+    "RadOutbreak_CompanionSickMgef2": "A companion is ill and getting worse. Give them Addictol or a cure.",
+    "RadOutbreak_CompanionSickSpell2": "A companion is ill and getting worse. Give them Addictol or a cure.",
+    "RadOutbreak_CompanionSickMgef3": "A companion is critically ill. Only a cure will save them.",
+    "RadOutbreak_CompanionSickSpell3": "A companion is critically ill. Only a cure will save them."
+  }
+}

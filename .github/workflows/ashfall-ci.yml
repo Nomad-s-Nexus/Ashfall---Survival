@@ -1,0 +1,210 @@
+name: ashfall-ci
+
+on:
+  push:
+    branches:
+      - "ci/**"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ashfall-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHONUTF8: "1"
+  PRIVATE_REPO: Nomad-s-Nexus/Ashfall
+
+jobs:
+  contracts:
+    name: Contract tests
+    runs-on: windows-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - uses: xmake-io/github-action-setup-xmake@v1
+        with:
+          xmake-version: "2.9.9"
+
+      - name: Run contract tests
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $vswhere = "${env:ProgramFiles(x86)}/Microsoft Visual Studio/Installer/vswhere.exe"
+          $vs = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          if (-not $vs) { throw 'Visual Studio C++ tools not found' }
+          & "$vs/Common7/Tools/Launch-VsDevShell.ps1" -Arch amd64 -HostArch amd64 -SkipAutomaticLocation
+          $python = @(
+            'verify_ci_deploy.py',
+            'verify_mask_catalog.py deploy/RadiationOverhaul.esp',
+            'verify_mask_extras.py',
+            'verify_hud_fallback.py deploy/PrismaUI_F4/views/Interface/FalloutAnomaly/hud_toxic.html src/RadHud.cpp',
+            'verify_local_hud_editor.py',
+            'verify_debug_menu_close.py',
+            'verify_load_settle.py',
+            'verify_ghoul_contract.py',
+            'verify_storm_spawn_ownership.py',
+            'verify_serialization_policy.py',
+            'verify_needs_consumption_trace.py',
+            'verify_climate_runtime.py',
+            'verify_climate_effects.py',
+            'verify_climate_protection_config.py',
+            'verify_climate_protection_runtime.py',
+            'verify_climate_heat_config.py',
+            'verify_climate_weather_config.py',
+            'verify_climate_hud.py',
+            'verify_hud_layout_bridge.py',
+            'verify_rad_shelter_cache.py',
+            'verify_rad_stack_integration.py',
+            'verify_survival.py',
+            'verify_survival_consumption.py',
+            'verify_climate_roofless.py',
+            'verify_survival_diseases.py',
+            'verify_survival_menu.py',
+            'verify_needs_globals.py',
+            'verify_needs_tuning.py',
+            'verify_outbreak_detector.py',
+            'verify_outbreak.py',
+            'verify_papyrus_pex.py',
+            'verify_dome_records_removed.py',
+            'verify_storm_color_tints.py',
+            'verify_thresholds.py'
+          )
+          $failed = @()
+          foreach ($t in $python) {
+            Write-Host "::group::python tests/$t"
+            python @(-split "tests/$t")
+            if ($LASTEXITCODE -ne 0) { $failed += $t }
+            Write-Host '::endgroup::'
+          }
+          foreach ($t in 'armor_diagnostics_tests.js', 'status_hud_tests.js', 'showcase_tests.js', 'storm_tint_tests.js') {
+            Write-Host "::group::node tests/$t"
+            node "tests/$t"
+            if ($LASTEXITCODE -ne 0) { $failed += $t }
+            Write-Host '::endgroup::'
+          }
+          if ($failed) { throw "contract tests failed: $($failed -join ', ')" }
+
+  native:
+    name: Native build
+    needs: contracts
+    runs-on: windows-latest
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: xmake-io/github-action-setup-xmake@v1
+        with:
+          xmake-version: "3.0.9"
+
+      - uses: ./.github/actions/setup-commonlib
+
+      - name: Configure (MSVC)
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          $vswhere = "${env:ProgramFiles(x86)}/Microsoft Visual Studio/Installer/vswhere.exe"
+          $vs = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          if (-not $vs) { throw 'Visual Studio C++ tools not found' }
+          & "$vs/Common7/Tools/Launch-VsDevShell.ps1" -Arch amd64 -HostArch amd64 -SkipAutomaticLocation
+          xmake f -p windows -a x64 -m release --builddir=build-msvc -y
+
+      - name: Build and run policy tests
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          $tests = @(
+            'rad_correctness_policy_tests',
+            'climate_policy_tests',
+            'climate_weather_policy_tests',
+            'climate_wetness_policy_tests',
+            'needs_policy_tests',
+            'needs_tuning_policy_tests',
+            'needs_trace_policy_tests',
+            'serialization_policy_tests'
+          )
+          foreach ($t in $tests) { xmake build -y $t }
+          foreach ($t in $tests) { & ".\build\tests\$t.exe" }
+
+      - name: Build
+        run: xmake build -vD -y FalloutAnomalyRadiation
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: FalloutAnomalyRadiation-windows-x64
+          path: build/release/FalloutAnomalyRadiation.dll
+          if-no-files-found: error
+          retention-days: 7
+
+  report:
+    name: Report to the private PR
+    needs: [contracts, native]
+    if: always() && !cancelled()
+    runs-on: ubuntu-latest
+    environment: ashfall-ci
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Post the result as a commit status on the private commit
+        env:
+          GH_TOKEN: ${{ secrets.PUBLIC_CI_TOKEN }}
+          NEEDS: ${{ toJSON(needs) }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          source=$(git log -1 --format=%B | sed -n 's/^Source-Commit: \([0-9a-f]\{40\}\)$/\1/p')
+          [ -n "$source" ] || { echo "::error::no Source-Commit trailer"; exit 1; }
+          failed=$(jq -r 'to_entries | map(select(.value.result != "success") | .key) | join(", ")' <<<"$NEEDS")
+          if [ -z "$failed" ]; then state=success; description="all jobs passed"; else state=failure; description="failed: $failed"; fi
+          gh api "repos/$PRIVATE_REPO/statuses/$source" -f state="$state" -f context="public-ci" \
+            -f target_url="$RUN_URL" -f description="${description:0:140}" >/dev/null
+          echo "$state posted to $PRIVATE_REPO@$source ($description)"
+
+  cleanup:
+    name: Delete superseded and closed-PR runs
+    needs: report
+    if: always() && !cancelled()
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+      - name: Delete completed runs that are superseded or whose branch is gone
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          live=" $(gh api "repos/$REPO/branches" --paginate --jq '.[].name' | tr '\n' ' ') "
+          declare -A newest=(["$BRANCH"]=1)
+          gh api "repos/$REPO/actions/workflows/ashfall-ci.yml/runs?status=completed&per_page=100" --paginate \
+            --jq '.workflow_runs[] | "\(.id) \(.head_branch)"' > runs.txt
+          while read -r id branch; do
+            if [[ "$live" == *" $branch "* && -z "${newest[$branch]:-}" ]]; then
+              newest[$branch]=1
+              continue
+            fi
+            gh api -X DELETE "repos/$REPO/actions/runs/$id"
+            echo "deleted run $id ($branch)"
+          done < runs.txt

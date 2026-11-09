@@ -1,0 +1,908 @@
+{
+  "plugin": "RadSurvival.esp",
+  "summary": "Disease layer contract: seven illnesses (fever, wasting, dysentery, food poisoning, tetanus, pneumonia, wound infection), three stages each, their causes, treatments and perks, the hypothermia ability ladder and the hot-food list, plus the risk and state GLOBs the HUD reads. Tuning and record expectations only - FO4IDE authors the records and tests/verify_survival.py checks the shipped plugin against this file.",
+  "mgefDefaults": {
+    "archetype": 34,
+    "archetypeName": "Peak Value Modifier",
+    "castingType": 0,
+    "castingTypeName": "Constant Effect",
+    "delivery": 0,
+    "flags": 2562,
+    "flagsMeaning": "Recover | No Duration | No Area",
+    "castingSoundLevel": 1,
+    "dualCastingScale": 1.0
+  },
+  "spellDefaults": {
+    "type": 4,
+    "typeName": "Ability",
+    "castType": 0,
+    "castTypeName": "Constant Effect",
+    "targetType": 0,
+    "targetTypeName": "Self"
+  },
+  "risk": {
+    "globEditorId": "RadSurvival_Risk",
+    "globFormId": "0x01000822",
+    "range": "0..1 exposure pool"
+  },
+  "state": {
+    "globEditorId": "RadSurvival_Disease",
+    "globFormId": "0x01000823",
+    "encoding": "DiseaseId * 10 + DiseaseStage, 0 while healthy; ids 1-7 so the packed maximum is 73; stage 0 means incubating and adds onset progress as a fraction below 0.5"
+  },
+  "timing": {
+    "hourlyRisk": 0.012,
+    "riskPerWeakStage": 0.008,
+    "riskPerHit": 0.01,
+    "riskPerSwim": 0.03,
+    "riskPerRadHour": 0.08,
+    "riskPerRainHour": 0.02,
+    "swimIntervalGameDays": 0.1,
+    "hitCooldownSeconds": 2.0,
+    "incubationHours": 4.0,
+    "stage2Hours": 10.0,
+    "stage3Hours": 24.0,
+    "restCureBaseHours": 4.0,
+    "immunityHours": 24.0
+  },
+  "exposure": {
+    "hit": "a weapon or creature hit from another actor; one charge per 2 real seconds so an automatic burst cannot flood the pool",
+    "swim": "one charge per 0.1 game days of swimming, mirroring vanilla HC_ManagerScript",
+    "ignored": "self-inflicted hits, hits with no actor aggressor, and spell sources such as radiation cloaks",
+    "radWeather": "the sky is sampled on the pool tick while the player is outdoors: a weather in the rad set charges the whole elapsed interval at riskPerRadHour",
+    "rain": "any other weather whose classification is rain or snow charges the interval at riskPerRainHour; interiors and covers are excluded by IsInInterior"
+  },
+  "weather": {
+    "stormWeatherPlugin": "RadiationOverhaul.esp",
+    "stormWeatherBase": "0x840",
+    "stormWeatherBaseDecimal": 2112,
+    "stormWeatherCount": 5,
+    "vanillaRadStorm": "0x1C3D5E:Fallout4.esm",
+    "vanillaRadStormDecimal": 1850718,
+    "rainClassification": 2,
+    "resolution": "resolved with GetFormFromFile by plugin name; RadSurvival.esp keeps Fallout4.esm as its only master, so these forms cannot be bound as VMAD properties"
+  },
+  "taint": {
+    "summary": "Taint shortlists and the cure ingestible, authored as Rad-owned records. The disease script reads the lists for membership; the keywords are the opt-in path for an item no list names.",
+    "constraint": "No HC_* form is referenced anywhere: the water list carries Dirty Water, Drugged Water and Dirty Wastelander only, and the cure is a Rad-owned ALCH rather than vanilla HC_Antibiotics.",
+    "keywords": [
+      {
+        "editorId": "RadSurvival_Keyword_TaintedFood",
+        "formKey": "0x01000824",
+        "property": "KeywordTaintedFood",
+        "category": "raw food",
+        "riskProperty": "RiskPerTaintedFood",
+        "risk": 0.1
+      },
+      {
+        "editorId": "RadSurvival_Keyword_TaintedWater",
+        "formKey": "0x01000825",
+        "property": "KeywordTaintedWater",
+        "category": "tainted water",
+        "riskProperty": "RiskPerTaintedWater",
+        "risk": 0.15
+      },
+      {
+        "editorId": "RadSurvival_Keyword_Contaminated",
+        "formKey": "0x01000826",
+        "property": "KeywordContaminated",
+        "category": "contaminated source",
+        "riskProperty": "RiskPerContaminated",
+        "risk": 0.05
+      },
+      {
+        "editorId": "RadSurvival_Keyword_CureItem",
+        "formKey": "0x01000827",
+        "property": "KeywordCureItem",
+        "category": "cure item"
+      }
+    ],
+    "lists": [
+      {
+        "editorId": "RadSurvival_TaintedFood",
+        "formKey": "0x01000828",
+        "property": "TaintedFoodList",
+        "keyword": "RadSurvival_Keyword_TaintedFood",
+        "category": 1,
+        "entries": [
+          "0x033101:Fallout4.esm",
+          "0x033106:Fallout4.esm",
+          "0x0330FF:Fallout4.esm",
+          "0x04A13F:Fallout4.esm",
+          "0x04A14F:Fallout4.esm",
+          "0x033102:Fallout4.esm",
+          "0x09DCC4:Fallout4.esm",
+          "0x0BEA58:Fallout4.esm"
+        ]
+      },
+      {
+        "editorId": "RadSurvival_TaintedWater",
+        "formKey": "0x01000829",
+        "property": "TaintedWaterList",
+        "keyword": "RadSurvival_Keyword_TaintedWater",
+        "category": 2,
+        "entries": [
+          "0x0366BF:Fallout4.esm",
+          "0x0A4944:Fallout4.esm",
+          "0x101295:Fallout4.esm"
+        ]
+      },
+      {
+        "editorId": "RadSurvival_Contaminated",
+        "formKey": "0x0100082A",
+        "property": "ContaminatedList",
+        "keyword": "RadSurvival_Keyword_Contaminated",
+        "category": 3,
+        "entries": [
+          "0x1C0FC3:Fallout4.esm",
+          "0x1C0FC2:Fallout4.esm",
+          "0x0E2F68:Fallout4.esm",
+          "0x058AB4:Fallout4.esm",
+          "0x1A6397:Fallout4.esm"
+        ]
+      }
+    ],
+    "cure": {
+      "itemEditorId": "RadSurvival_CureItem",
+      "itemFormId": "0x0100082C",
+      "itemValue": 125,
+      "itemWeight": 0.5,
+      "effectEditorId": "RadSurvival_CureEffect",
+      "effectFormId": "0x0100082B",
+      "effectArchetype": 1,
+      "effectArchetypeName": "Script",
+      "effectFlags": 2562,
+      "clears": "CureDisease",
+      "immunityHours": 24.0,
+      "extraCureFormIds": [
+        "0x023742:Fallout4.esm"
+      ],
+      "extraCureName": "RadAway",
+      "note": "tools/patch_full_names.py names the item Rad Cure Compound. It is crafted at the Chemistry Station by the recipe below and is not added to any vendor list, because every vendor leveled list is vanilla and overriding one conflicts with other mods. RadAway (0x023742:Fallout4.esm) stays a second obtainable cure. Every tuning value the two scripts use is authored as a VMAD float property, so retuning needs no Papyrus compile.",
+      "recipe": {
+        "editorId": "RadSurvival_co_CureItem",
+        "recordFormId": "0x01000872",
+        "copiedFrom": "0x058AAF:Fallout4.esm co_chem_Radaway",
+        "workbenchKeyword": "0x102158:Fallout4.esm WorkbenchChemlab",
+        "category": "0x102150:Fallout4.esm RecipeHealing",
+        "createdCount": 1,
+        "components": [
+          { "recordFormId": "0x023742:Fallout4.esm", "name": "RadAway", "count": 1 },
+          { "recordFormId": "0x0366C0:Fallout4.esm", "name": "Purified Water", "count": 1 },
+          { "recordFormId": "0x1C25EE:Fallout4.esm", "name": "Bloodleaf", "count": 2 }
+        ],
+        "anyPerk": [
+          { "recordFormId": "0x0E36FF:Fallout4.esm", "name": "Chemist01", "rank": 1 },
+          { "recordFormId": "0x04C926:Fallout4.esm", "name": "Medic01", "rank": 1 }
+        ]
+      }
+    },
+    "fallback": "An unbound or empty list charges nothing for its category, and TraceTaintLists names it on every resync; the risk pool then fills only from the ambient, hit, swim and weather paths."
+  },
+  "diseases": [
+    {
+      "id": 1,
+      "name": "fever",
+      "actorValue": "DamageResist",
+      "actorValueFormId": "0x0002E3:Fallout4.esm",
+      "spellBase": 2076,
+      "stages": [
+        {
+          "stage": 1,
+          "mgefEditorId": "RadSurvival_Fever1",
+          "mgefFormId": "0x01000816",
+          "spellEditorId": "RadSurvival_FeverSpell1",
+          "spellFormId": "0x0100081C",
+          "magnitude": -10
+        },
+        {
+          "stage": 2,
+          "mgefEditorId": "RadSurvival_Fever2",
+          "mgefFormId": "0x01000817",
+          "spellEditorId": "RadSurvival_FeverSpell2",
+          "spellFormId": "0x0100081D",
+          "magnitude": -25
+        },
+        {
+          "stage": 3,
+          "mgefEditorId": "RadSurvival_Fever3",
+          "mgefFormId": "0x01000818",
+          "spellEditorId": "RadSurvival_FeverSpell3",
+          "spellFormId": "0x0100081E",
+          "magnitude": -40
+        }
+      ],
+      "perkBase": 2093,
+      "perks": [
+        {
+          "stage": 1,
+          "editorId": "RadSurvival_PerkFever1",
+          "recordFormId": "0x0100082D",
+          "name": "Fever (Stage 1)"
+        },
+        {
+          "stage": 2,
+          "editorId": "RadSurvival_PerkFever2",
+          "recordFormId": "0x0100082E",
+          "name": "Fever (Stage 2)"
+        },
+        {
+          "stage": 3,
+          "editorId": "RadSurvival_PerkFever3",
+          "recordFormId": "0x0100082F",
+          "name": "Fever (Stage 3)"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "name": "wasting",
+      "actorValue": "SpeedMult",
+      "actorValueFormId": "0x0002DA:Fallout4.esm",
+      "spellBase": 2079,
+      "stages": [
+        {
+          "stage": 1,
+          "mgefEditorId": "RadSurvival_Wasting1",
+          "mgefFormId": "0x01000819",
+          "spellEditorId": "RadSurvival_WastingSpell1",
+          "spellFormId": "0x0100081F",
+          "magnitude": -5
+        },
+        {
+          "stage": 2,
+          "mgefEditorId": "RadSurvival_Wasting2",
+          "mgefFormId": "0x0100081A",
+          "spellEditorId": "RadSurvival_WastingSpell2",
+          "spellFormId": "0x01000820",
+          "magnitude": -10
+        },
+        {
+          "stage": 3,
+          "mgefEditorId": "RadSurvival_Wasting3",
+          "mgefFormId": "0x0100081B",
+          "spellEditorId": "RadSurvival_WastingSpell3",
+          "spellFormId": "0x01000821",
+          "magnitude": -15
+        }
+      ],
+      "perkBase": 2096,
+      "perks": [
+        {
+          "stage": 1,
+          "editorId": "RadSurvival_PerkWasting1",
+          "recordFormId": "0x01000830",
+          "name": "Wasting (Stage 1)"
+        },
+        {
+          "stage": 2,
+          "editorId": "RadSurvival_PerkWasting2",
+          "recordFormId": "0x01000831",
+          "name": "Wasting (Stage 2)"
+        },
+        {
+          "stage": 3,
+          "editorId": "RadSurvival_PerkWasting3",
+          "recordFormId": "0x01000832",
+          "name": "Wasting (Stage 3)"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "name": "dysentery",
+      "actorValue": "Endurance",
+      "actorValueFormId": "0x0002C4:Fallout4.esm",
+      "spellBase": 2114,
+      "perkBase": 2129,
+      "timings": {
+        "incubationHours": 8.0,
+        "stage2Hours": 20.0,
+        "stage3Hours": 40.0
+      },
+      "stages": [
+        {
+          "stage": 1,
+          "mgefEditorId": "RadSurvival_Dysentery1",
+          "mgefFormId": "0x01000833",
+          "spellEditorId": "RadSurvival_DysenterySpell1",
+          "spellFormId": "0x01000842",
+          "magnitude": -1
+        },
+        {
+          "stage": 2,
+          "mgefEditorId": "RadSurvival_Dysentery2",
+          "mgefFormId": "0x01000834",
+          "spellEditorId": "RadSurvival_DysenterySpell2",
+          "spellFormId": "0x01000843",
+          "magnitude": -2
+        },
+        {
+          "stage": 3,
+          "mgefEditorId": "RadSurvival_Dysentery3",
+          "mgefFormId": "0x01000835",
+          "spellEditorId": "RadSurvival_DysenterySpell3",
+          "spellFormId": "0x01000844",
+          "magnitude": -3
+        }
+      ],
+      "perks": [
+        {
+          "stage": 1,
+          "editorId": "RadSurvival_PerkDysentery1",
+          "recordFormId": "0x01000851",
+          "name": "Dysentery (Stage 1)"
+        },
+        {
+          "stage": 2,
+          "editorId": "RadSurvival_PerkDysentery2",
+          "recordFormId": "0x01000852",
+          "name": "Dysentery (Stage 2)"
+        },
+        {
+          "stage": 3,
+          "editorId": "RadSurvival_PerkDysentery3",
+          "recordFormId": "0x01000853",
+          "name": "Dysentery (Stage 3)"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "name": "food poisoning",
+      "actorValue": "Strength",
+      "actorValueFormId": "0x0002C2:Fallout4.esm",
+      "spellBase": 2117,
+      "perkBase": 2132,
+      "timings": {
+        "incubationHours": 2.0,
+        "stage2Hours": 6.0,
+        "stage3Hours": 12.0
+      },
+      "stages": [
+        {
+          "stage": 1,
+          "mgefEditorId": "RadSurvival_FoodPoisoning1",
+          "mgefFormId": "0x01000836",
+          "spellEditorId": "RadSurvival_FoodPoisoningSpell1",
+          "spellFormId": "0x01000845",
+          "magnitude": -1
+        },
+        {
+          "stage": 2,
+          "mgefEditorId": "RadSurvival_FoodPoisoning2",
+          "mgefFormId": "0x01000837",
+          "spellEditorId": "RadSurvival_FoodPoisoningSpell2",
+          "spellFormId": "0x01000846",
+          "magnitude": -2
+        },
+        {
+          "stage": 3,
+          "mgefEditorId": "RadSurvival_FoodPoisoning3",
+          "mgefFormId": "0x01000838",
+          "spellEditorId": "RadSurvival_FoodPoisoningSpell3",
+          "spellFormId": "0x01000847",
+          "magnitude": -3
+        }
+      ],
+      "perks": [
+        {
+          "stage": 1,
+          "editorId": "RadSurvival_PerkFoodPoisoning1",
+          "recordFormId": "0x01000854",
+          "name": "Food Poisoning (Stage 1)"
+        },
+        {
+          "stage": 2,
+          "editorId": "RadSurvival_PerkFoodPoisoning2",
+          "recordFormId": "0x01000855",
+          "name": "Food Poisoning (Stage 2)"
+        },
+        {
+          "stage": 3,
+          "editorId": "RadSurvival_PerkFoodPoisoning3",
+          "recordFormId": "0x01000856",
+          "name": "Food Poisoning (Stage 3)"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "name": "tetanus",
+      "actorValue": "Agility",
+      "actorValueFormId": "0x0002C7:Fallout4.esm",
+      "spellBase": 2120,
+      "perkBase": 2135,
+      "timings": {
+        "incubationHours": 24.0,
+        "stage2Hours": 48.0,
+        "stage3Hours": 72.0
+      },
+      "stages": [
+        {
+          "stage": 1,
+          "mgefEditorId": "RadSurvival_Tetanus1",
+          "mgefFormId": "0x01000839",
+          "spellEditorId": "RadSurvival_TetanusSpell1",
+          "spellFormId": "0x01000848",
+          "magnitude": -1
+        },
+        {
+          "stage": 2,
+          "mgefEditorId": "RadSurvival_Tetanus2",
+          "mgefFormId": "0x0100083A",
+          "spellEditorId": "RadSurvival_TetanusSpell2",
+          "spellFormId": "0x01000849",
+          "magnitude": -2
+        },
+        {
+          "stage": 3,
+          "mgefEditorId": "RadSurvival_Tetanus3",
+          "mgefFormId": "0x0100083B",
+          "spellEditorId": "RadSurvival_TetanusSpell3",
+          "spellFormId": "0x0100084A",
+          "magnitude": -3
+        }
+      ],
+      "perks": [
+        {
+          "stage": 1,
+          "editorId": "RadSurvival_PerkTetanus1",
+          "recordFormId": "0x01000857",
+          "name": "Tetanus (Stage 1)"
+        },
+        {
+          "stage": 2,
+          "editorId": "RadSurvival_PerkTetanus2",
+          "recordFormId": "0x01000858",
+          "name": "Tetanus (Stage 2)"
+        },
+        {
+          "stage": 3,
+          "editorId": "RadSurvival_PerkTetanus3",
+          "recordFormId": "0x01000859",
+          "name": "Tetanus (Stage 3)"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "name": "pneumonia",
+      "actorValue": "ActionPoints",
+      "actorValueFormId": "0x0002D5:Fallout4.esm",
+      "spellBase": 2123,
+      "perkBase": 2138,
+      "timings": {
+        "incubationHours": 12.0,
+        "stage2Hours": 30.0,
+        "stage3Hours": 54.0
+      },
+      "stages": [
+        {
+          "stage": 1,
+          "mgefEditorId": "RadSurvival_Pneumonia1",
+          "mgefFormId": "0x0100083C",
+          "spellEditorId": "RadSurvival_PneumoniaSpell1",
+          "spellFormId": "0x0100084B",
+          "magnitude": -10
+        },
+        {
+          "stage": 2,
+          "mgefEditorId": "RadSurvival_Pneumonia2",
+          "mgefFormId": "0x0100083D",
+          "spellEditorId": "RadSurvival_PneumoniaSpell2",
+          "spellFormId": "0x0100084C",
+          "magnitude": -25
+        },
+        {
+          "stage": 3,
+          "mgefEditorId": "RadSurvival_Pneumonia3",
+          "mgefFormId": "0x0100083E",
+          "spellEditorId": "RadSurvival_PneumoniaSpell3",
+          "spellFormId": "0x0100084D",
+          "magnitude": -40
+        }
+      ],
+      "perks": [
+        {
+          "stage": 1,
+          "editorId": "RadSurvival_PerkPneumonia1",
+          "recordFormId": "0x0100085A",
+          "name": "Pneumonia (Stage 1)"
+        },
+        {
+          "stage": 2,
+          "editorId": "RadSurvival_PerkPneumonia2",
+          "recordFormId": "0x0100085B",
+          "name": "Pneumonia (Stage 2)"
+        },
+        {
+          "stage": 3,
+          "editorId": "RadSurvival_PerkPneumonia3",
+          "recordFormId": "0x0100085C",
+          "name": "Pneumonia (Stage 3)"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "name": "wound infection",
+      "actorValue": "Health",
+      "actorValueFormId": "0x0002D4:Fallout4.esm",
+      "spellBase": 2126,
+      "perkBase": 2141,
+      "timings": {
+        "incubationHours": 6.0,
+        "stage2Hours": 16.0,
+        "stage3Hours": 30.0
+      },
+      "stages": [
+        {
+          "stage": 1,
+          "mgefEditorId": "RadSurvival_WoundInfection1",
+          "mgefFormId": "0x0100083F",
+          "spellEditorId": "RadSurvival_WoundInfectionSpell1",
+          "spellFormId": "0x0100084E",
+          "magnitude": -10
+        },
+        {
+          "stage": 2,
+          "mgefEditorId": "RadSurvival_WoundInfection2",
+          "mgefFormId": "0x01000840",
+          "spellEditorId": "RadSurvival_WoundInfectionSpell2",
+          "spellFormId": "0x0100084F",
+          "magnitude": -25
+        },
+        {
+          "stage": 3,
+          "mgefEditorId": "RadSurvival_WoundInfection3",
+          "mgefFormId": "0x01000841",
+          "spellEditorId": "RadSurvival_WoundInfectionSpell3",
+          "spellFormId": "0x01000850",
+          "magnitude": -50
+        }
+      ],
+      "perks": [
+        {
+          "stage": 1,
+          "editorId": "RadSurvival_PerkWoundInfection1",
+          "recordFormId": "0x0100085D",
+          "name": "Wound Infection (Stage 1)"
+        },
+        {
+          "stage": 2,
+          "editorId": "RadSurvival_PerkWoundInfection2",
+          "recordFormId": "0x0100085E",
+          "name": "Wound Infection (Stage 2)"
+        },
+        {
+          "stage": 3,
+          "editorId": "RadSurvival_PerkWoundInfection3",
+          "recordFormId": "0x0100085F",
+          "name": "Sepsis (Stage 3)"
+        }
+      ],
+      "stage3Label": "sepsis"
+    }
+  ],
+  "diseaseMaxId": 7,
+  "illnessBases": {
+    "spellProperty": "IllnessSpellBase",
+    "spellBase": 2114,
+    "perkProperty": "IllnessPerkBase",
+    "perkBase": 2129,
+    "stride": 3,
+    "firstDisease": 3
+  },
+  "causes": {
+    "scaleTuningKey": "DiseaseCauseScale",
+    "scaleNote": "every cause roll is multiplied by the DiseaseCauseScale tuning value; 0 disables causes, an unset key means 1",
+    "entries": [
+      {
+        "disease": 3,
+        "source": "tainted water",
+        "function": "ExposureConsume",
+        "chanceProperty": "DysenteryChance",
+        "chance": 0.2
+      },
+      {
+        "disease": 4,
+        "source": "tainted food",
+        "function": "ExposureConsume",
+        "chanceProperty": "FoodPoisoningChance",
+        "chance": 0.25
+      },
+      {
+        "disease": 5,
+        "source": "melee hit",
+        "function": "RollWound",
+        "chanceProperty": "TetanusChance",
+        "chance": 0.04
+      },
+      {
+        "disease": 7,
+        "source": "hit below WoundHealthFraction of health",
+        "function": "RollWound",
+        "chanceProperty": "WoundInfectionChance",
+        "chance": 0.05
+      },
+      {
+        "disease": 6,
+        "source": "cold stage 2 or worse, scaled by (stage - 1) and elapsed hours",
+        "function": "RollCold",
+        "chanceProperty": "PneumoniaChancePerHour",
+        "chance": 0.02
+      }
+    ],
+    "woundHealthFractionProperty": "WoundHealthFraction",
+    "woundHealthFraction": 0.5,
+    "foodPoisoningClearHours": 24.0,
+    "foodPoisoningClearProperty": "FoodPoisoningClearHours",
+    "meleeKeywords": [
+      {
+        "editorId": "WeaponTypeMelee1H",
+        "recordFormId": "0x04A0A4:Fallout4.esm",
+        "property": "MeleeOneHandKeywordId"
+      },
+      {
+        "editorId": "WeaponTypeMelee2H",
+        "recordFormId": "0x04A0A5:Fallout4.esm",
+        "property": "MeleeTwoHandKeywordId"
+      }
+    ]
+  },
+  "lethal": {
+    "enabledTuningKey": "DiseaseLethal",
+    "delayTuningKey": "DiseaseLethalHours",
+    "delayHours": 24.0,
+    "delayProperty": "LethalDelayHours",
+    "terminalHours": 12.0,
+    "terminalProperty": "TerminalHours",
+    "warnHours": 3.0,
+    "warnProperty": "TerminalWarnHours",
+    "drainPerHour": 0.03,
+    "drainProperty": "TerminalDrainPerHour",
+    "exempt": [4],
+    "note": "Hours count from the stage 3 threshold. After delayHours at stage 3 the terminal phase starts with a warning, health drains (fraction of base health per hour, rising to 4x, never below 1), a second warning comes warnHours before the end, then the player is killed. Big time jumps stop at each warning. A cure, a matching medicine or rest moves progress back, which ends the phase. Food poisoning clears itself instead."
+  },
+  "treatments": {
+    "stepDown": [
+      {
+        "name": "purified water",
+        "recordFormId": "0x0366C0:Fallout4.esm",
+        "property": "PurifiedWaterFormId",
+        "diseases": [
+          3,
+          4
+        ]
+      },
+      {
+        "name": "Med-X",
+        "recordFormId": "0x033779:Fallout4.esm",
+        "property": "MedXFormId",
+        "diseases": [
+          5
+        ]
+      },
+      {
+        "name": "Stimpak",
+        "recordFormId": "0x023736:Fallout4.esm",
+        "property": "StimpakFormId",
+        "diseases": [
+          7
+        ]
+      }
+    ],
+    "cureOutright": [
+      {
+        "name": "RefreshingBeverage",
+        "recordFormId": "0x058AB8:Fallout4.esm",
+        "property": "RefreshingBeverageFormId",
+        "diseases": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7
+        ]
+      },
+      {
+        "name": "RadAway",
+        "recordFormId": "0x023742:Fallout4.esm",
+        "property": "RadAwayFormId",
+        "diseases": [
+          1,
+          2
+        ]
+      }
+    ],
+    "restCure": {
+      "tetanusBlockedFromStage": 2,
+      "pneumoniaBlockedWhileCold": true
+    },
+    "thirstScale": {
+      "disease": 3,
+      "stages": [
+        1.25,
+        1.5,
+        2.0
+      ]
+    }
+  },
+  "cold": {
+    "stageSource": "src/ClimatePolicy.h:EffectsForStage",
+    "spellBaseProperty": "ColdSpellBase",
+    "spellBase": 2148,
+    "perkBaseProperty": "ColdPerkBase",
+    "perkBase": 2153,
+    "mgefs": [
+      {
+        "key": "speed",
+        "editorId": "RadSurvival_ColdSpeed",
+        "recordFormId": "0x01000860",
+        "actorValue": "SpeedMult",
+        "actorValueFormId": "0x0002DA:Fallout4.esm"
+      },
+      {
+        "key": "strength",
+        "editorId": "RadSurvival_ColdStrength",
+        "recordFormId": "0x01000861",
+        "actorValue": "Strength",
+        "actorValueFormId": "0x0002C2:Fallout4.esm"
+      },
+      {
+        "key": "endurance",
+        "editorId": "RadSurvival_ColdEndurance",
+        "recordFormId": "0x01000862",
+        "actorValue": "Endurance",
+        "actorValueFormId": "0x0002C4:Fallout4.esm"
+      },
+      {
+        "key": "agility",
+        "editorId": "RadSurvival_ColdAgility",
+        "recordFormId": "0x01000863",
+        "actorValue": "Agility",
+        "actorValueFormId": "0x0002C7:Fallout4.esm"
+      },
+      {
+        "key": "apRate",
+        "editorId": "RadSurvival_ColdAPRate",
+        "recordFormId": "0x0100086F",
+        "actorValue": "ActionPointsRateMult",
+        "actorValueFormId": "0x000359:Fallout4.esm",
+        "copiedFrom": "HC_ReduceActionPointRateMultEffect_DiseaseEffectOnly 0008B3:Fallout4.esm",
+        "unit": "percent"
+      },
+      {
+        "key": "reload",
+        "editorId": "RadSurvival_ColdReload",
+        "recordFormId": "0x01000870",
+        "actorValue": "WeapReloadSpeedMult",
+        "actorValueFormId": "0x0002D3:Fallout4.esm",
+        "copiedFrom": "AbFortifyReloadSpeedMult 127560:Fallout4.esm",
+        "archetype": 0,
+        "unit": "fraction"
+      },
+      {
+        "key": "aim",
+        "editorId": "RadSurvival_ColdAimSway",
+        "recordFormId": "0x01000871",
+        "actorValue": "AimStability",
+        "actorValueFormId": "0x00035B:Fallout4.esm",
+        "copiedFrom": "FortifyAimStability 2458C0:Fallout4.esm",
+        "unit": "fraction"
+      }
+    ],
+    "stages": [
+      {
+        "stage": 1,
+        "spellEditorId": "RadSurvival_ColdSpell1",
+        "spellFormId": "0x01000864",
+        "perkEditorId": "RadSurvival_PerkCold1",
+        "perkFormId": "0x01000869",
+        "perkName": "Chilled",
+        "effects": {
+          "speed": -2,
+          "apRate": -5,
+          "reload": -0.03,
+          "aim": -0.03
+        }
+      },
+      {
+        "stage": 2,
+        "spellEditorId": "RadSurvival_ColdSpell2",
+        "spellFormId": "0x01000865",
+        "perkEditorId": "RadSurvival_PerkCold2",
+        "perkFormId": "0x0100086A",
+        "perkName": "Mild Hypothermia",
+        "effects": {
+          "speed": -6,
+          "strength": -1,
+          "endurance": -1,
+          "apRate": -15,
+          "reload": -0.08,
+          "aim": -0.08
+        }
+      },
+      {
+        "stage": 3,
+        "spellEditorId": "RadSurvival_ColdSpell3",
+        "spellFormId": "0x01000866",
+        "perkEditorId": "RadSurvival_PerkCold3",
+        "perkFormId": "0x0100086B",
+        "perkName": "Moderate Hypothermia",
+        "effects": {
+          "speed": -12,
+          "strength": -2,
+          "endurance": -2,
+          "agility": -1,
+          "apRate": -30,
+          "reload": -0.18,
+          "aim": -0.18
+        }
+      },
+      {
+        "stage": 4,
+        "spellEditorId": "RadSurvival_ColdSpell4",
+        "spellFormId": "0x01000867",
+        "perkEditorId": "RadSurvival_PerkCold4",
+        "perkFormId": "0x0100086C",
+        "perkName": "Severe Hypothermia",
+        "effects": {
+          "speed": -25,
+          "strength": -3,
+          "endurance": -3,
+          "agility": -2,
+          "apRate": -50,
+          "reload": -0.35,
+          "aim": -0.35
+        }
+      },
+      {
+        "stage": 5,
+        "spellEditorId": "RadSurvival_ColdSpell5",
+        "spellFormId": "0x01000868",
+        "perkEditorId": "RadSurvival_PerkCold5",
+        "perkFormId": "0x0100086D",
+        "perkName": "Critical Hypothermia",
+        "effects": {
+          "speed": -40,
+          "strength": -4,
+          "endurance": -4,
+          "agility": -3,
+          "apRate": -70,
+          "reload": -0.5,
+          "aim": -0.5
+        }
+      }
+    ],
+    "hotFood": {
+      "editorId": "RadSurvival_HotFood",
+      "recordFormId": "0x0100086E",
+      "property": "HotFoodListFormId",
+      "formIdDecimal": 2158,
+      "warmHoursProperty": "HotFoodWarmHours",
+      "warmHours": 2.0,
+      "entries": [
+        {
+          "name": "VegetableSoup",
+          "recordFormId": "0x04A3B9:Fallout4.esm"
+        },
+        {
+          "name": "IguanaSoup",
+          "recordFormId": "0x102157:Fallout4.esm"
+        },
+        {
+          "name": "stewRadStag",
+          "recordFormId": "0x04696A:Fallout4.esm"
+        },
+        {
+          "name": "SquirrelStew",
+          "recordFormId": "0x036927:Fallout4.esm"
+        }
+      ]
+    }
+  }
+}

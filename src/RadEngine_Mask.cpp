@@ -1,0 +1,775 @@
+#include "RadEngine_Internal.h"
+#include "RadCorrectnessPolicy.h"
+#include "RadLifecycleDispatch.h"
+#include "Hooks.h"
+#include "RadMaskOwnership.h"
+#include "RadNeedsTuning.h"
+
+using namespace RadInternal;
+
+namespace
+{
+    constexpr std::uint32_t kActorTypeHumanKeywordID = 0x0002CB72;
+    constexpr std::uint32_t kTemporaryNpcGasMaskID = 0x001184C1;
+
+    bool PreservesNpcHair(const RE::TESObjectARMO* armor)
+    {
+        if (!armor) return false;
+        constexpr std::int32_t kHairSlots[] = {
+            static_cast<std::int32_t>(RE::BIPED_OBJECT::kHairTop),
+            static_cast<std::int32_t>(RE::BIPED_OBJECT::kHairLong),
+            static_cast<std::int32_t>(RE::BIPED_OBJECT::kScalp),
+        };
+        for (const auto slot : kHairSlots)
+            if (armor->FillsBipedSlot(slot)) return false;
+        return true;
+    }
+
+    bool WearsPowerArmorHelmet(RE::Actor* actor, const RE::BGSKeyword* powerKeyword)
+    {
+        if (!actor || !actor->biped || !powerKeyword) return false;
+        constexpr auto kHelmetSlot = static_cast<std::int32_t>(RE::BIPED_OBJECT::kHairTop);
+        auto& biped = *actor->biped;
+        for (std::size_t i = 0; i < std::size(biped.object); ++i)
+        {
+            RE::TESForm* form = biped.object[i].parent.object;
+            if (!form || form->GetFormType() != RE::ENUM_FORM_ID::kARMO) continue;
+            auto* armor = static_cast<RE::TESObjectARMO*>(form);
+            if (armor->HasKeyword(powerKeyword) && armor->FillsBipedSlot(kHelmetSlot))
+                return true;
+        }
+        return false;
+    }
+
+    bool IsHumanInCell(RE::Actor* actor, RE::TESObjectCELL* cell, const RE::BGSKeyword* humanKeyword)
+    {
+        if (!actor || !cell || cell->IsInterior() || !humanKeyword || actor->GetParentCell() != cell) return false;
+        auto* base = actor->GetObjectReference();
+        if (!base || base->GetFormType() != RE::ENUM_FORM_ID::kNPC_) return false;
+        auto* race = static_cast<RE::TESNPC*>(base)->GetFormRace();
+        return race && race->HasKeyword(humanKeyword);
+    }
+
+    bool WearsExactArmor(RE::Actor* actor, std::uint32_t formID)
+    {
+        if (!actor || !actor->biped || formID == 0) return false;
+        auto& biped = *actor->biped;
+        for (std::size_t i = 0; i < std::size(biped.object); ++i)
+        {
+            auto* form = biped.object[i].parent.object;
+            if (form && form->GetFormID() == formID) return true;
+        }
+        return false;
+    }
+
+    bool CaptureDisplacedGear(
+        RE::Actor* actor,
+        const RE::TESObjectARMO* mask,
+        std::array<std::uint32_t, RadMaskOwnership::kMaxDisplacedGear>& displaced)
+    {
+        if (!actor || !actor->biped || !mask) return false;
+        const auto maskSlots = mask->bipedModelData.bipedObjectSlots;
+        std::size_t count = 0;
+        auto& biped = *actor->biped;
+        for (std::size_t i = 0; i < std::size(biped.object); ++i)
+        {
+            auto* form = biped.object[i].parent.object;
+            if (!form || form->GetFormType() != RE::ENUM_FORM_ID::kARMO || form->GetFormID() == mask->GetFormID())
+                continue;
+            auto* armor = static_cast<RE::TESObjectARMO*>(form);
+            if ((armor->bipedModelData.bipedObjectSlots & maskSlots) == 0) continue;
+            const auto id = armor->GetFormID();
+            bool duplicate = false;
+            for (std::size_t j = 0; j < count; ++j)
+                if (displaced[j] == id) duplicate = true;
+            if (duplicate) continue;
+            if (count >= displaced.size()) return false;
+            displaced[count++] = id;
+        }
+        return true;
+    }
+
+    RE::TESForm* ResolveMaskEntry(RE::TESDataHandler* a_data, std::string a_entry)
+    {
+        const auto colon = a_entry.find(':');
+        if (!a_data || colon == std::string::npos || colon == 0 || colon + 1 >= a_entry.size())
+            return nullptr;
+        std::string plugin = a_entry.substr(0, colon);
+        std::string id = a_entry.substr(colon + 1);
+        const auto trim = [](std::string& text) {
+            const auto first = text.find_first_not_of(" \t");
+            if (first == std::string::npos) { text.clear(); return; }
+            const auto last = text.find_last_not_of(" \t");
+            text = text.substr(first, last - first + 1);
+        };
+        trim(plugin);
+        trim(id);
+        const auto zero = id.rfind("0x", 0) == 0 || id.rfind("0X", 0) == 0;
+        if (zero) id = id.substr(2);
+        char* end = nullptr;
+        const unsigned long local = std::strtoul(id.c_str(), &end, 16);
+        if (plugin.empty() || id.empty() || !end || end == id.c_str() || *end != '\0' || local > 0xFFFFFFul)
+            return nullptr;
+        return a_data->LookupForm(static_cast<RE::TESFormID>(local), plugin);
+    }
+
+    std::vector<std::string> SplitMaskList(const char* a_raw)
+    {
+        std::vector<std::string> entries;
+        const std::string list(a_raw ? a_raw : "");
+        std::size_t start = 0;
+        while (start < list.size())
+        {
+            const auto comma = list.find(',', start);
+            std::string entry = list.substr(start, comma == std::string::npos ? std::string::npos : comma - start);
+            const auto first = entry.find_first_not_of(" \t");
+            if (first != std::string::npos)
+            {
+                const auto last = entry.find_last_not_of(" \t");
+                entries.push_back(entry.substr(first, last - first + 1));
+            }
+            if (comma == std::string::npos) break;
+            start = comma + 1;
+        }
+        return entries;
+    }
+}
+
+
+bool RadiationEngine::IsListedMask(const RE::TESObjectARMO* armor) const
+{
+    return armor && std::find(_extraMasks.begin(), _extraMasks.end(), armor) != _extraMasks.end();
+}
+
+
+bool RadiationEngine::HasRadResistance(const RE::TESObjectARMO* armor) const
+{
+    constexpr std::uint32_t kRadDamageTypeFormID = 0x00060A85;
+    if (!armor || !armor->armorData.damageTypes)
+        return false;
+    for (const auto& entry : *armor->armorData.damageTypes)
+    {
+        if (entry.first && entry.first->GetFormID() == kRadDamageTypeFormID)
+            return static_cast<int>(entry.second.i) >= _minMaskRadResist;
+    }
+    return false;
+}
+
+
+bool RadiationEngine::IsRecognizedGasMask(const RE::TESObjectARMO* armor) const
+{
+    if (!armor) return false;
+    const bool mouth = armor->FillsBipedSlot(static_cast<std::int32_t>(RE::BIPED_OBJECT::kMouth));
+    bool keyword = _gasMaskKeyword && armor->HasKeyword(_gasMaskKeyword);
+    for (auto extra = _extraMaskKeywords.begin(); !keyword && extra != _extraMaskKeywords.end(); ++extra)
+        keyword = *extra && armor->HasKeyword(*extra);
+    if (RadCorrectnessPolicy::IsConfiguredMask(IsListedMask(armor), mouth, keyword))
+        return true;
+    return _inferMasksFromRadResist
+        && RadCorrectnessPolicy::IsRadShieldedMask(mouth, HasRadResistance(armor));
+}
+
+
+RE::TESObjectARMO* RadiationEngine::GetActorWornMask(RE::Actor* actor) const
+{
+    if (!actor || !actor->biped) return nullptr;
+
+    auto& biped = *actor->biped;
+    for (std::size_t i = 0; i < std::size(biped.object); ++i)
+    {
+        RE::TESForm* form = biped.object[i].parent.object;
+        if (!form || form->GetFormType() != RE::ENUM_FORM_ID::kARMO) continue;
+        auto* armo = static_cast<RE::TESObjectARMO*>(form);
+        if (IsRecognizedGasMask(armo))
+            return armo;
+    }
+    return nullptr;
+}
+
+
+RE::TESObjectARMO* RadiationEngine::GetWornMask() const
+{
+    return GetActorWornMask(RE::PlayerCharacter::GetSingleton());
+}
+
+
+bool RadiationEngine::IsWearingGasMask() const { return GetWornMask() != nullptr; }
+
+
+bool RadiationEngine::PlayerWearsPowerArmorHelmet() const
+{
+    return WearsPowerArmorHelmet(RE::PlayerCharacter::GetSingleton(), _armorTypePowerKeyword);
+}
+
+
+RE::TESObjectARMO* RadiationEngine::FindActorInventoryMask(RE::Actor* actor) const
+{
+    if (!actor) return nullptr;
+    auto* inv = actor->inventoryList;
+    if (!inv) return nullptr;
+
+    RE::TESObjectARMO* found = nullptr;
+    inv->ForEachStack(
+        [this](RE::BGSInventoryItem& a_item) -> bool {
+            auto* obj = a_item.object;
+            if (!obj || obj->GetFormType() != RE::ENUM_FORM_ID::kARMO) return false;
+            auto* armo = static_cast<RE::TESObjectARMO*>(obj);
+            return IsRecognizedGasMask(armo);
+        },
+        [&found](RE::BGSInventoryItem& a_item, RE::BGSInventoryItem::Stack&) -> bool {
+            found = static_cast<RE::TESObjectARMO*>(a_item.object);
+            return false;
+        });
+    return found;
+}
+
+
+RE::TESObjectARMO* RadiationEngine::FindInventoryMask() const
+{
+    return FindActorInventoryMask(RE::PlayerCharacter::GetSingleton());
+}
+
+
+void RadiationEngine::SetActorMaskEquipped(RE::Actor* actor, RE::TESObjectARMO* mask, bool equip)
+{
+    if (!mask || !actor) return;
+    auto* eqMgr = RE::ActorEquipManager::GetSingleton();
+    if (!eqMgr) return;
+    const auto actorID = actor->GetFormID();
+    const auto maskID = mask->GetFormID();
+    RE::BGSObjectInstance instance(static_cast<RE::TESForm*>(mask), nullptr);
+    if (equip)
+    {
+        if (!RadMaskOwnership::Claim(actorID, maskID)) return;
+        if (!eqMgr->EquipObject(actor, instance, 0, 1, nullptr, true, false, false, false, false))
+            RadMaskOwnership::Release(actorID);
+    }
+    else
+    {
+        if (!RadMaskOwnership::Owns(actorID, maskID)) return;
+        if (eqMgr->UnequipObject(actor, &instance, 1, nullptr, 0, true, false, false, false, nullptr))
+            RadMaskOwnership::Release(actorID);
+    }
+}
+
+
+void RadiationEngine::SetMaskEquipped(RE::TESObjectARMO* mask, bool equip)
+{
+    SetActorMaskEquipped(RE::PlayerCharacter::GetSingleton(), mask, equip);
+}
+
+
+void RadiationEngine::EquipNearbyNpcMasks(bool equip)
+{
+    int n = 0;
+    auto* eqMgr = RE::ActorEquipManager::GetSingleton();
+    if (!eqMgr) return;
+
+    auto cleanupEntry = [this, eqMgr](RE::Actor* actor, const RadMaskOwnership::Entry& entry) -> bool {
+        if (!actor) return false;
+        if (!actor->biped) return false;
+        auto* maskForm = RE::TESForm::GetFormByID(entry.maskFormID);
+        auto* mask = maskForm && maskForm->GetFormType() == RE::ENUM_FORM_ID::kARMO
+            ? static_cast<RE::TESObjectARMO*>(maskForm) : nullptr;
+        if (!mask)
+        {
+            RadMaskOwnership::Release(entry.actorFormID);
+            return true;
+        }
+
+        if (!entry.IsTemporary())
+        {
+            if (WearsExactArmor(actor, entry.maskFormID))
+            {
+                SetActorMaskEquipped(actor, mask, false);
+                if (RadMaskOwnership::Owns(entry.actorFormID, entry.maskFormID)) return false;
+            }
+            else
+            {
+                RadMaskOwnership::Release(entry.actorFormID);
+            }
+            return true;
+        }
+
+        if (WearsExactArmor(actor, entry.maskFormID))
+        {
+            RE::BGSObjectInstance instance(static_cast<RE::TESForm*>(mask), nullptr);
+            if (!eqMgr->UnequipObject(actor, &instance, 1, nullptr, 0, false, true, false, true, nullptr))
+                return false;
+        }
+
+        const auto before = actor->GetInventoryObjectCount(mask);
+        if (before > 0)
+        {
+            RE::TESObjectREFR::RemoveItemData data(mask, 1);
+            actor->RemoveItem(data);
+            if (actor->GetInventoryObjectCount(mask) >= before) return false;
+        }
+
+        bool restorePending = false;
+        for (const auto formID : entry.displacedFormIDs)
+        {
+            if (formID == 0) break;
+            auto* form = RE::TESForm::GetFormByID(formID);
+            if (!form || form->GetFormType() != RE::ENUM_FORM_ID::kARMO) continue;
+            auto* armor = static_cast<RE::TESObjectARMO*>(form);
+            if (actor->GetInventoryObjectCount(armor) <= 0 || WearsExactArmor(actor, formID)) continue;
+            RE::BGSObjectInstance instance(static_cast<RE::TESForm*>(armor), nullptr);
+            if (!eqMgr->EquipObject(actor, instance, 0, 1, nullptr, false, true, false, true, false))
+                restorePending = true;
+        }
+        if (restorePending) return false;
+        RadMaskOwnership::Release(entry.actorFormID);
+        return true;
+    };
+
+    if (!equip)
+    {
+        std::unordered_set<std::uint32_t> pending;
+        for (const std::uint32_t id : _autoMaskedNpcs)
+        {
+            auto entry = RadMaskOwnership::Lookup(id);
+            if (!entry) continue;
+            RE::TESForm* form = RE::TESForm::GetFormByID(id);
+            if (!form || form->GetFormType() != RE::ENUM_FORM_ID::kACHR)
+            {
+                RadMaskOwnership::Release(id);
+                continue;
+            }
+            auto* actor = static_cast<RE::Actor*>(form);
+            if (!cleanupEntry(actor, *entry))
+                pending.insert(id);
+            else
+                ++n;
+        }
+        _autoMaskedNpcs = std::move(pending);
+        if (n > 0)
+            Log()->info("[Mask] removed {} NPC mask(s) after rad weather.", n);
+        return;
+    }
+
+    auto* player = RE::PlayerCharacter::GetSingleton();
+    auto* playerCell = player ? player->GetParentCell() : nullptr;
+    auto* dh = RE::TESDataHandler::GetSingleton();
+    if (!player || !playerCell || !dh) return;
+
+    auto* humanForm = dh->LookupForm(kActorTypeHumanKeywordID, "Fallout4.esm");
+    auto* humanKeyword = humanForm && humanForm->GetFormType() == RE::ENUM_FORM_ID::kKYWD
+        ? static_cast<RE::BGSKeyword*>(humanForm) : nullptr;
+    auto* maskForm = dh->LookupForm(kTemporaryNpcGasMaskID, "Fallout4.esm");
+    auto* tempMask = maskForm && maskForm->GetFormType() == RE::ENUM_FORM_ID::kARMO
+        ? static_cast<RE::TESObjectARMO*>(maskForm) : nullptr;
+    if (!_armorTypePowerKeyword || !humanKeyword || !tempMask || !IsRecognizedGasMask(tempMask) || !PreservesNpcHair(tempMask)) return;
+
+    std::unordered_set<std::uint32_t> retained;
+    for (const auto id : _autoMaskedNpcs)
+    {
+        auto entry = RadMaskOwnership::Lookup(id);
+        if (!entry) continue;
+        auto* form = RE::TESForm::GetFormByID(id);
+        if (!form || form->GetFormType() != RE::ENUM_FORM_ID::kACHR)
+        {
+            RadMaskOwnership::Release(id);
+            continue;
+        }
+        auto* actor = static_cast<RE::Actor*>(form);
+        const bool eligible = !actor->IsDead(false) &&
+            IsHumanInCell(actor, playerCell, humanKeyword) &&
+            !WearsPowerArmorHelmet(actor, _armorTypePowerKeyword);
+        if (eligible)
+            retained.insert(id);
+        else if (!cleanupEntry(actor, *entry))
+            retained.insert(id);
+    }
+    _autoMaskedNpcs = std::move(retained);
+
+    auto* pl = RE::ProcessLists::GetSingleton();
+    if (!pl) return;
+
+    for (auto& handle : pl->highActorHandles)
+    {
+        auto actorPtr = handle.get();
+        RE::Actor* actor = actorPtr.get();
+        if (!actor || actor->IsDead(false) || actor->IsPlayerRef()) continue;
+        if (!IsHumanInCell(actor, playerCell, humanKeyword)) continue;
+        if (WearsPowerArmorHelmet(actor, _armorTypePowerKeyword)) continue;
+
+        const auto actorID = actor->GetFormID();
+        if (auto entry = RadMaskOwnership::Lookup(actorID))
+        {
+            if (entry->IsTemporary())
+            {
+                if (WearsExactArmor(actor, entry->maskFormID))
+                {
+                    _autoMaskedNpcs.insert(actorID);
+                    continue;
+                }
+                if (GetActorWornMask(actor))
+                {
+                    if (!cleanupEntry(actor, *entry)) _autoMaskedNpcs.insert(actorID);
+                    continue;
+                }
+                auto* ownedForm = RE::TESForm::GetFormByID(entry->maskFormID);
+                auto* ownedMask = ownedForm && ownedForm->GetFormType() == RE::ENUM_FORM_ID::kARMO
+                    ? static_cast<RE::TESObjectARMO*>(ownedForm) : nullptr;
+                if (ownedMask && actor->GetInventoryObjectCount(ownedMask) > 0)
+                {
+                    RE::BGSObjectInstance instance(static_cast<RE::TESForm*>(ownedMask), nullptr);
+                    if (eqMgr->EquipObject(actor, instance, 0, 1, nullptr, false, true, false, true, false))
+                        _autoMaskedNpcs.insert(actorID);
+                    continue;
+                }
+                RadMaskOwnership::Release(actorID);
+            }
+            else
+            {
+                _autoMaskedNpcs.insert(actorID);
+                continue;
+            }
+        }
+
+        if (GetActorWornMask(actor)) continue;
+        if (!actor->biped) continue;
+
+        std::array<std::uint32_t, RadMaskOwnership::kMaxDisplacedGear> displaced{};
+        if (!CaptureDisplacedGear(actor, tempMask, displaced)) continue;
+
+        const auto before = actor->GetInventoryObjectCount(tempMask);
+        actor->AddObjectToContainer(tempMask, nullptr, 1, nullptr, RE::ITEM_REMOVE_REASON::kNone);
+        if (actor->GetInventoryObjectCount(tempMask) <= before) continue;
+
+        if (!RadMaskOwnership::ClaimTemporary(actorID, tempMask->GetFormID(), displaced))
+        {
+            RE::TESObjectREFR::RemoveItemData data(tempMask, 1);
+            actor->RemoveItem(data);
+            continue;
+        }
+
+        RE::BGSObjectInstance instance(static_cast<RE::TESForm*>(tempMask), nullptr);
+        if (!eqMgr->EquipObject(actor, instance, 0, 1, nullptr, false, true, false, true, false))
+        {
+            RadMaskOwnership::Release(actorID);
+            RE::TESObjectREFR::RemoveItemData data(tempMask, 1);
+            actor->RemoveItem(data);
+            continue;
+        }
+
+        _autoMaskedNpcs.insert(actorID);
+        ++n;
+    }
+    if (n > 0)
+        Log()->info("[Mask] equipped {} NPC mask(s) for rad weather.", n);
+}
+
+
+void RadiationEngine::ReloadHotkeysFromIni()
+{
+    constexpr const char* kIni = ".\\Data\\F4SE\\Plugins\\FalloutAnomalyRadiation.ini";
+    WIN32_FILE_ATTRIBUTE_DATA attrs{};
+    if (::GetFileAttributesExA(kIni, GetFileExInfoStandard, &attrs))
+    {
+        const auto stamp = (static_cast<std::uint64_t>(attrs.ftLastWriteTime.dwHighDateTime) << 32) | attrs.ftLastWriteTime.dwLowDateTime;
+        if (stamp == _hotkeyIniWriteTime)
+            return;
+        _hotkeyIniWriteTime = stamp;
+    }
+    else
+    {
+        _hotkeyIniWriteTime = 0;
+    }
+    char replaceText[32]{};
+    char repairText[32]{};
+    ::GetPrivateProfileStringA("Filter", "ReplaceKey", "", replaceText, sizeof(replaceText), kIni);
+    ::GetPrivateProfileStringA("Condition", "RepairKey", "", repairText, sizeof(repairText), kIni);
+
+    int replace = 0;
+    int repair = 0;
+    const bool replaceParsed = replaceText[0] == '\0' || RadCorrectnessPolicy::ParseHotkey(replaceText, replace);
+    const bool repairParsed = repairText[0] == '\0' || RadCorrectnessPolicy::ParseHotkey(repairText, repair);
+    if (!replaceParsed)
+        Log()->warn("[Input] ReplaceKey \"{}\" is not a decimal or 0x-hex key code; replace hotkey disabled.", replaceText);
+    if (!repairParsed)
+        Log()->warn("[Input] RepairKey \"{}\" is not a decimal or 0x-hex key code; repair hotkey disabled.", repairText);
+
+    const auto validated = RadCorrectnessPolicy::ValidateHotkeyPair(
+        replaceParsed ? replace : 0, repairParsed ? repair : 0);
+    if (validated.replaceRejected)
+        Log()->warn("[Input] ReplaceKey 0x{:X} rejected (mouse button, Shift/Esc, F8, or an invalid code); replace hotkey disabled.", replace);
+    if (validated.repairRejected)
+        Log()->warn("[Input] RepairKey 0x{:X} rejected (mouse button, Shift/Esc, F8, or an invalid code); repair hotkey disabled.", repair);
+    if (validated.duplicateRejected)
+        Log()->warn("[Input] ReplaceKey and RepairKey are both 0x{:X}; both mask hotkeys disabled so load order cannot decide.", replace);
+    if (validated.replace != _filterReplaceKey || validated.repair != _conditionRepairKey)
+        Log()->info("[Input] mask hotkeys reloaded: replace=0x{:X}, repair=0x{:X}.", validated.replace, validated.repair);
+    _filterReplaceKey = validated.replace;
+    _conditionRepairKey = validated.repair;
+}
+
+
+void RadiationEngine::LoadFilterIni()
+{
+    constexpr const char* kIni = ".\\Data\\F4SE\\Plugins\\FalloutAnomalyRadiation.ini";
+    _filterDurationSec = ::GetPrivateProfileIntA("Filter", "DurationSeconds", 1200, kIni);
+    if (_filterDurationSec < 1) _filterDurationSec = 1;
+    _filterAutoReplace = ::GetPrivateProfileIntA("Filter", "AutoReplace", 0, kIni) != 0;
+    {
+        char b[16];
+        ::GetPrivateProfileStringA("Filter", "ChokeRadsPerSec", "8.0", b, sizeof(b), kIni);
+        _filterChokeRads = std::max(0.0f, static_cast<float>(std::atof(b)));
+    }
+    _conditionEnabled    = ::GetPrivateProfileIntA("Condition", "Enabled", 1, kIni) != 0;
+    _conditionAutoRepair = ::GetPrivateProfileIntA("Condition", "AutoRepair", 0, kIni) != 0;
+    {
+        char b[16];
+        ::GetPrivateProfileStringA("Condition", "DamagePerHit", "6.0", b, sizeof(b), kIni);
+        _conditionHitDamage = std::max(0.0f, static_cast<float>(std::atof(b)));
+    }
+    _respectGodMode = ::GetPrivateProfileIntA("Survival", "RespectGodMode", 1, kIni) != 0;
+    _chokingEnabled = ::GetPrivateProfileIntA("Choking", "Enabled", 1, kIni) != 0;
+    _chokeSounds    = ::GetPrivateProfileIntA("Choking", "Sounds", 1, kIni) != 0;
+    {
+        char b[16];
+        ::GetPrivateProfileStringA("Choking", "HealthPerSecond", "1.5", b, sizeof(b), kIni);
+        _chokeHealthPerSec = std::max(0.0f, static_cast<float>(std::atof(b)));
+        ::GetPrivateProfileStringA("Choking", "FailedMaskFactor", "0.5", b, sizeof(b), kIni);
+        _chokeFailedFactor = std::clamp(static_cast<float>(std::atof(b)), 0.0f, 1.0f);
+    }
+    _ambientEnabled = ::GetPrivateProfileIntA("Ambient", "Enabled", 1, kIni) != 0;
+    {
+        const int vol = std::clamp(static_cast<int>(::GetPrivateProfileIntA("Ambient", "Volume", 45, kIni)), 0, 100);
+        _ambientAtten = static_cast<std::uint16_t>((100 - vol) * 30);
+        const int svol = std::clamp(static_cast<int>(::GetPrivateProfileIntA("Ambient", "StormVolume", 85, kIni)), 0, 100);
+        _stormBedAtten = static_cast<std::uint16_t>((100 - svol) * 30);
+    }
+    _stormsEnabled = ::GetPrivateProfileIntA("Storm", "Enabled", 1, kIni) != 0;
+    {
+        char b[32]{};
+        ::GetPrivateProfileStringA("Storm", "MinMinutes", "35.0", b, sizeof(b), kIni);
+        _stormMinRealMin = std::strtof(b, nullptr);
+        ::GetPrivateProfileStringA("Storm", "MaxMinutes", "90.0", b, sizeof(b), kIni);
+        _stormMaxRealMin = std::strtof(b, nullptr);
+        if (!(_stormMinRealMin >= 1.0f)) _stormMinRealMin = kStormMinRealMin;
+        if (!(_stormMaxRealMin >= _stormMinRealMin)) _stormMaxRealMin = _stormMinRealMin * 2.0f;
+
+        const int vgapDefault = static_cast<int>(kRadstormMinGapSec / 60.0);
+        const int vgap = ::GetPrivateProfileIntA("Storm", "VanillaRadstormGapMinutes", vgapDefault, kIni);
+        _vanillaRadstormGapSec = static_cast<double>(std::max(0, vgap)) * 60.0;
+
+        char stormLead[32]{};
+        char domeLead[32]{};
+        ::GetPrivateProfileStringA("Storm", "StormLeadMinutes", "", stormLead, sizeof(stormLead), kIni);
+        ::GetPrivateProfileStringA("Storm", "DomeLeadMinutes", "", domeLead, sizeof(domeLead), kIni);
+        const float leadMin = RadCorrectnessPolicy::ResolveStormLeadMinutes(stormLead, domeLead);
+        _stormLeadTicks = static_cast<int>(leadMin * 60.0f * 4.0f);
+    }
+
+    ReloadHotkeysFromIni();
+    LoadMaskConfig();
+    ApplyTuning();
+
+    Log()->info(
+        "[Filter] duration={}s, replaceKey=0x{:X}, autoReplace={}, choke={:.1f}/s | "
+        "[Condition] enabled={}, dmg/hit={:.1f}, repairKey=0x{:X}, autoRepair={} | "
+        "[Choking] enabled={}, hp/s={:.1f}, failedMaskFactor={:.2f}, sounds={} | "
+        "[Ambient] enabled={}, atten={} stormAtten={} | "
+        "[Storm] enabled={}, gap={:.0f}-{:.0f} real min, vanillaRadstormGap={:.0f} min",
+        _filterDurationSec, _filterReplaceKey.load(), _filterAutoReplace, _filterChokeRads,
+        _conditionEnabled, _conditionHitDamage, _conditionRepairKey.load(), _conditionAutoRepair,
+        _chokingEnabled, _chokeHealthPerSec, _chokeFailedFactor, _chokeSounds,
+        _ambientEnabled, _ambientAtten, _stormBedAtten,
+        _stormsEnabled, _stormMinRealMin, _stormMaxRealMin, _vanillaRadstormGapSec / 60.0);
+}
+
+
+void RadiationEngine::ApplyTuning()
+{
+    using RadNeedsTuningPolicy::Key;
+    const auto value = [](Key a_key, float a_current) { return RadNeedsTuning::Value(a_key, a_current); };
+    const auto flag = [](Key a_key, bool a_current) { return RadNeedsTuning::On(a_key, a_current); };
+
+    _filterEnabled = flag(Key::kFilterEnabled, true);
+    _filterDurationSec = std::max(1, static_cast<int>(value(Key::kFilterDuration, static_cast<float>(_filterDurationSec))));
+    _filterChokeRads = value(Key::kFilterChokeRads, _filterChokeRads);
+    _filterAutoReplace = flag(Key::kFilterAutoReplace, _filterAutoReplace);
+    _conditionEnabled = flag(Key::kConditionEnabled, _conditionEnabled);
+    _conditionHitDamage = value(Key::kConditionDamage, _conditionHitDamage);
+    _conditionAutoRepair = flag(Key::kConditionAutoRepair, _conditionAutoRepair);
+    _chokingEnabled = flag(Key::kChokingEnabled, _chokingEnabled);
+    _chokeHealthPerSec = value(Key::kChokeHealthPerSec, _chokeHealthPerSec);
+    _chokeFailedFactor = value(Key::kChokeFailedFactor, _chokeFailedFactor);
+    _chokeSounds = flag(Key::kChokeSounds, _chokeSounds);
+    _ambientEnabled = flag(Key::kAmbientEnabled, _ambientEnabled);
+    if (const float volume = value(Key::kAmbientVolume, -1.0f); volume >= 0.0f)
+        _ambientAtten = static_cast<std::uint16_t>((100 - std::clamp(static_cast<int>(volume), 0, 100)) * 30);
+    if (const float volume = value(Key::kStormVolume, -1.0f); volume >= 0.0f)
+        _stormBedAtten = static_cast<std::uint16_t>((100 - std::clamp(static_cast<int>(volume), 0, 100)) * 30);
+    _stormsEnabled = flag(Key::kStormsEnabled, _stormsEnabled);
+
+    float gapMin = 0.0f, gapMax = 0.0f;
+    EffectiveStormGap(gapMin, gapMax);
+    if (_stormGapAppliedMin > 0.0f && (gapMin != _stormGapAppliedMin || gapMax != _stormGapAppliedMax))
+        _stormScheduled = false;
+    _stormGapAppliedMin = gapMin;
+    _stormGapAppliedMax = gapMax;
+
+    using RadNeedsTuning::SetLive;
+    const auto live = [](bool a_on) { return a_on ? 1.0f : 0.0f; };
+    const auto percent = [](std::uint16_t a_atten) { return 100.0f - static_cast<float>(a_atten) / 30.0f; };
+    SetLive(Key::kFilterEnabled, live(_filterEnabled));
+    SetLive(Key::kFilterDuration, static_cast<float>(_filterDurationSec));
+    SetLive(Key::kFilterChokeRads, _filterChokeRads);
+    SetLive(Key::kFilterAutoReplace, live(_filterAutoReplace));
+    SetLive(Key::kConditionEnabled, live(_conditionEnabled));
+    SetLive(Key::kConditionDamage, _conditionHitDamage);
+    SetLive(Key::kConditionAutoRepair, live(_conditionAutoRepair));
+    SetLive(Key::kChokingEnabled, live(_chokingEnabled));
+    SetLive(Key::kChokeHealthPerSec, _chokeHealthPerSec);
+    SetLive(Key::kChokeFailedFactor, _chokeFailedFactor);
+    SetLive(Key::kChokeSounds, live(_chokeSounds));
+    SetLive(Key::kAmbientEnabled, live(_ambientEnabled));
+    SetLive(Key::kAmbientVolume, percent(_ambientAtten));
+    SetLive(Key::kStormVolume, percent(_stormBedAtten));
+    SetLive(Key::kStormsEnabled, live(_stormsEnabled));
+    SetLive(Key::kStormMinMinutes, gapMin);
+    SetLive(Key::kStormMaxMinutes, gapMax);
+}
+
+
+void RadiationEngine::LoadMaskConfig()
+{
+    constexpr const char* kIni = ".\\Data\\F4SE\\Plugins\\FalloutAnomalyRadiation.ini";
+    _extraMaskKeywords.clear();
+    _extraMasks.clear();
+
+    auto* data = RE::TESDataHandler::GetSingleton();
+    if (!data)
+        return;
+
+    char raw[1024]{};
+    _inferMasksFromRadResist = ::GetPrivateProfileIntA("Masks", "InferFromRadResist", 1, kIni) != 0;
+    _minMaskRadResist = std::max(0, static_cast<int>(::GetPrivateProfileIntA("Masks", "MinRadResist", 10, kIni)));
+    ::GetPrivateProfileStringA("Masks", "ExtraKeywords", "", raw, sizeof(raw), kIni);
+    for (const auto& entry : SplitMaskList(raw))
+    {
+        auto* form = ResolveMaskEntry(data, entry);
+        if (form && form->GetFormType() == RE::ENUM_FORM_ID::kKYWD)
+            _extraMaskKeywords.push_back(static_cast<RE::BGSKeyword*>(form));
+        else
+            Log()->warn("[Masks] ExtraKeywords entry '{}' is not a loaded keyword", entry);
+    }
+
+    ::GetPrivateProfileStringA("Masks", "ExtraMasks", "", raw, sizeof(raw), kIni);
+    for (const auto& entry : SplitMaskList(raw))
+    {
+        auto* form = ResolveMaskEntry(data, entry);
+        if (form && form->GetFormType() == RE::ENUM_FORM_ID::kARMO)
+            _extraMasks.push_back(static_cast<const RE::TESObjectARMO*>(form));
+        else
+            Log()->warn("[Masks] ExtraMasks entry '{}' is not a loaded armor", entry);
+    }
+
+    Log()->info("[Masks] {} extra keyword(s), {} listed armor(s), inferFromRadResist={} (min {} rad resist)",
+        _extraMaskKeywords.size(), _extraMasks.size(), _inferMasksFromRadResist, _minMaskRadResist);
+}
+
+
+int RadiationEngine::FilterItemCount() const
+{
+    if (!_filterItem) return 0;
+    auto* player = RE::PlayerCharacter::GetSingleton();
+    return player ? static_cast<int>(player->GetInventoryObjectCount(_filterItem)) : 0;
+}
+
+
+void RadiationEngine::ReplaceFilter(bool silent)
+{
+    if (!_filterItem || !_filterEnabled) return;
+    auto* player = RE::PlayerCharacter::GetSingleton();
+    if (!player) return;
+
+    if (!GetWornMask())
+    {
+        Log()->info("[Filter] replace refused: no recognised gas mask worn.");
+        if (!silent) Notify("[Mask] No recognised gas mask equipped.", true);
+        return;
+    }
+
+    if (FilterItemCount() <= 0)
+    {
+        Log()->info("[Filter] replace refused: no spare filters in the inventory.");
+        if (!silent) Notify("[Mask] No spare filters.", true);
+        return;
+    }
+    RE::TESObjectREFR::RemoveItemData data(_filterItem, 1);
+    player->RemoveItem(data);
+    _filterCharge   = 100.0f;
+    _filterLowWarned = 0;
+    {
+        static bool alt = false;
+        alt = !alt;
+        RE::BSSoundHandle h{};
+        Play2DSound(silent ? (alt ? kSndFilterFastA : kSndFilterFastB)
+                           : (alt ? kSndFilterA : kSndFilterB), h);
+    }
+    if (!silent) Notify("[Mask] Filter replaced.", false);
+    Log()->info("[Filter] replaced (remaining {}).", FilterItemCount());
+}
+
+
+void RadiationEngine::OnPlayerHit()
+{
+    const auto generation = RadLifecycleDispatch::ReadyPlayerUpdateGeneration();
+    if (generation == 0) return;
+
+    if (!Hooks::IsGameMainThread())
+    {
+        if (!Hooks::QueueMainThreadTask([generation]() {
+                if (!RadLifecycleDispatch::PlayerUpdatesReady(generation)) return;
+                RadiationEngine::GetSingleton().OnPlayerHit();
+            }))
+            Log()->error("[Condition] Dropped player-hit mask damage because main-thread dispatch was unavailable.");
+        return;
+    }
+
+    if (!RadLifecycleDispatch::PlayerUpdatesReady(generation)) return;
+    if (!_conditionEnabled) return;
+    if (_maskCondition <= 0.0f) return;
+    if (!IsWearingGasMask()) return;
+    _maskCondition = std::max(0.0f, _maskCondition - _conditionHitDamage);
+}
+
+
+int RadiationEngine::RepairKitCount() const
+{
+    if (!_repairKitItem) return 0;
+    auto* player = RE::PlayerCharacter::GetSingleton();
+    return player ? static_cast<int>(player->GetInventoryObjectCount(_repairKitItem)) : 0;
+}
+
+
+void RadiationEngine::RepairMask(bool silent)
+{
+    if (!_repairKitItem) return;
+    auto* player = RE::PlayerCharacter::GetSingleton();
+    if (!player) return;
+
+    if (!GetWornMask())
+    {
+        Log()->info("[Condition] repair refused: no recognised gas mask worn.");
+        if (!silent) Notify("[Mask] No recognised gas mask equipped.", true);
+        return;
+    }
+
+    if (RepairKitCount() <= 0)
+    {
+        Log()->info("[Condition] repair refused: no repair kits in the inventory.");
+        if (!silent) Notify("[Mask] No repair kits.", true);
+        return;
+    }
+    RE::TESObjectREFR::RemoveItemData data(_repairKitItem, 1);
+    player->RemoveItem(data);
+    _maskCondition     = 100.0f;
+    _conditionLowWarned = 0;
+    if (!silent) Notify("[Mask] Mask repaired.", false);
+    Log()->info("[Condition] mask repaired (kits left {}).", RepairKitCount());
+}

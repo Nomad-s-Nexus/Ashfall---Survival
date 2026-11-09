@@ -1,0 +1,351 @@
+#include "pch.h"
+#include "ClimateRuntime.h"
+#include "ClimateEffects.h"
+#include "ClimateEnvironmentPolicy.h"
+#include "ClimateStagePolicy.h"
+#include "RadHud.h"
+#include "RadNeedsTuning.h"
+#include "RadNeedsTuningPolicy.h"
+
+#include <Windows.h>
+#include <chrono>
+#include <RE/B/BSSpinLock.h>
+#include <RE/C/Calendar.h>
+#include <RE/P/PlayerCharacter.h>
+#include <RE/S/Sky.h>
+#include <RE/T/TESGlobal.h>
+#include <RE/T/TESObjectCELL.h>
+#include <RE/T/TESWeather.h>
+#include <RE/U/UI.h>
+
+namespace
+{
+    float GameDays() noexcept
+    {
+        auto* cal = RE::Calendar::GetSingleton();
+        if (cal && cal->gameDaysPassed)
+            return cal->gameDaysPassed->GetValue();
+        return 0.0f;
+    }
+
+    std::uint32_t GameMonth() noexcept
+    {
+        if (auto* cal = RE::Calendar::GetSingleton())
+            return cal->GetMonth();
+        return 8;
+    }
+
+    RadClimateEnvironmentPolicy::WeatherClass ClassifyWeather(RE::TESWeather* weather) noexcept
+    {
+        RadClimateEnvironmentPolicy::WeatherClass result{};
+        if (!weather)
+            return result;
+
+        const auto raw = static_cast<std::uint8_t>(
+            weather->weatherData[static_cast<int>(RE::TESWeather::WeatherData::kFlags)]);
+        const auto has = [raw](RE::TESWeather::WeatherDataFlags flag) {
+            return (raw & static_cast<std::uint8_t>(flag)) != 0;
+        };
+        result.pleasant = has(RE::TESWeather::WeatherDataFlags::kPleasant);
+        result.cloudy = has(RE::TESWeather::WeatherDataFlags::kCloudy);
+        result.rainy = has(RE::TESWeather::WeatherDataFlags::kRainy);
+        result.snow = has(RE::TESWeather::WeatherDataFlags::kSnow);
+        return result;
+    }
+
+    std::int8_t WindByte(RE::TESWeather* weather) noexcept
+    {
+        if (!weather)
+            return 0;
+        return weather->weatherData[static_cast<int>(RE::TESWeather::WeatherData::kWindSpeed)];
+    }
+
+    const char* StageName(RadClimatePolicy::HypothermiaStage stage) noexcept
+    {
+        using enum RadClimatePolicy::HypothermiaStage;
+        switch (stage)
+        {
+        case kChilled: return "chilled";
+        case kMild: return "mild";
+        case kModerate: return "moderate";
+        case kSevere: return "severe";
+        case kCritical: return "critical";
+        case kNormal:
+        default: return "normal";
+        }
+    }
+
+    struct ClimateIni
+    {
+        float enclosedFloorC{ RadClimateEnvironmentPolicy::kEnclosedAmbientFloorC };
+        bool enclosureEnabled{ true };
+    };
+
+    ClimateIni ReadClimateIni() noexcept
+    {
+        constexpr const char* kIni = ".\\Data\\F4SE\\Plugins\\FalloutAnomalyRadiation.ini";
+        constexpr const char* kSection = "Climate";
+        ClimateIni ini{};
+        char buffer[64]{};
+        float parsed = 0.0f;
+
+        ::GetPrivateProfileStringA(kSection, "EnclosedAmbientFloorC", "", buffer, sizeof(buffer), kIni);
+        if (RadNeedsTuningPolicy::ParseValue(buffer, parsed))
+            ini.enclosedFloorC = RadClimateEnvironmentPolicy::SanitizeEnclosedFloorC(parsed);
+
+        buffer[0] = '\0';
+        ::GetPrivateProfileStringA(kSection, "EnclosedShelterEnabled", "", buffer, sizeof(buffer), kIni);
+        if (RadNeedsTuningPolicy::ParseValue(buffer, parsed))
+            ini.enclosureEnabled = parsed >= 0.5f;
+        return ini;
+    }
+
+    struct PauseInfo
+    {
+        bool isPaused{ false };
+        std::uint32_t freezeFramePause{ 0 };
+        bool pausedByMenu{ false };
+    };
+
+    PauseInfo QueryPauseInfo() noexcept
+    {
+        PauseInfo info{};
+        auto* ui = RE::UI::GetSingleton();
+        if (!ui)
+            return info;
+
+        info.freezeFramePause = ui->freezeFramePause;
+        if (info.freezeFramePause > 0)
+            info.isPaused = true;
+
+        RE::BSAutoReadLock l{ RE::UI::GetMenuMapRWLock() };
+        for (const auto& menu : ui->menuStack)
+        {
+            if (menu && menu->menuFlags.all(RE::UI_MENU_FLAGS::kPausesGame))
+            {
+                info.pausedByMenu = true;
+                info.isPaused = true;
+                break;
+            }
+        }
+        return info;
+    }
+}
+
+void ClimateRuntime::Update()
+{
+    auto* player = RE::PlayerCharacter::GetSingleton();
+    if (!player)
+        return;
+
+    auto* cell = player->GetParentCell();
+    if (!cell)
+        return;
+
+    if (!_weatherConfigLoaded)
+    {
+        _weatherConfig.Load("Data/F4SE/Plugins/FalloutAnomaly/climate_weather.json");
+        _weatherConfigLoaded = true;
+    }
+    if (!_climateIniLoaded)
+    {
+        const auto ini = ReadClimateIni();
+        _enclosedFloorC = ini.enclosedFloorC;
+        _shelter.SetEnclosureEnabled(ini.enclosureEnabled);
+        _climateIniLoaded = true;
+    }
+
+    auto* sky = RE::Sky::GetSingleton();
+    auto* weather = sky ? sky->currentWeather : nullptr;
+    const bool indoors = cell->IsInterior();
+    const bool rooflessInterior = indoors && _weatherConfig.IsRooflessInterior(cell->GetFormID());
+    const auto weatherClass = indoors
+        ? RadClimateEnvironmentPolicy::WeatherClass{}
+        : ClassifyWeather(weather);
+    const auto exteriorWeatherClass = ClassifyWeather(weather);
+    const auto weatherOverride = ((!indoors || rooflessInterior) && weather)
+        ? _weatherConfig.Override(weather->GetFormID())
+        : std::nullopt;
+    auto shelter = rooflessInterior
+        ? _shelter.SampleRooflessInterior(player, cell)
+        : _shelter.Sample(player);
+    const bool roofed = _shelter.LastRoofed();
+    const auto gameMonth = GameMonth();
+
+    RadClimatePolicy::EnvironmentSample environment{};
+    environment.indoors = indoors;
+    environment.rooflessInterior = rooflessInterior;
+    environment.shelter01 = shelter.thermal01;
+    environment.precipitationShelter01 = shelter.precipitation01;
+    environment.windShelter01 = shelter.windShelter01;
+    float exteriorPrecipitation01 = RadClimateEnvironmentPolicy::PrecipitationIntensity01(exteriorWeatherClass);
+    if (weatherOverride && weatherOverride->precipitation01)
+        exteriorPrecipitation01 = *weatherOverride->precipitation01;
+    environment.precipitation01 = RadClimatePolicy::PrecipitationFor(
+        indoors, rooflessInterior, roofed, exteriorPrecipitation01);
+    environment.submerged = player->IsSwimming();
+    environment.windMps = indoors ? 0.0f : RadClimateEnvironmentPolicy::WindProxyMps(WindByte(weather));
+    environment.ambientC = RadClimateEnvironmentPolicy::AmbientTemperatureC(indoors, weatherClass, GameDays(), gameMonth);
+    if (weatherOverride)
+        environment.ambientC += weatherOverride->temperatureOffsetC;
+    environment.ambientC = RadClimateEnvironmentPolicy::ShelteredAmbientC(environment.ambientC, shelter.enclosed01, _enclosedFloorC);
+    environment.heat01 = _heat.Sample(player);
+    environment.heat01 = std::max(environment.heat01, ClimateEffects::WarmthFloor01(GameDays()));
+    environment.activity01 = player->DoGetSprinting() ? 1.0f : 0.0f;
+
+    const auto protection = _protection.Sample(player);
+    const float nowDays = GameDays();
+    const auto pauseInfo = QueryPauseInfo();
+
+    using RadNeedsTuningPolicy::Key;
+    RadClimatePolicy::Tuning tuning{};
+    tuning.coolingScale = RadNeedsTuning::On(Key::kTemperatureEnabled, true) ? RadNeedsTuning::Value(Key::kColdIntensity, 1.0f) : 0.0f;
+    tuning.wetnessGainScale = RadNeedsTuning::On(Key::kWetnessEnabled, true) ? RadNeedsTuning::Value(Key::kWetnessSoakRate, 1.0f) : 0.0f;
+    tuning.wetnessDryScale = RadNeedsTuning::Value(Key::kWetnessDryRate, 1.0f);
+
+    RadClimatePolicy::StepResult result{};
+    const char* branchName = "init";
+    float appliedSeconds = 0.0f;
+
+    if (_prevGameDays < 0.0f)
+    {
+        _prevGameDays = nowDays;
+        result = RadClimatePolicy::Step(_state, environment, protection, 0.0f, tuning);
+        branchName = "init";
+        appliedSeconds = 0.0f;
+    }
+    else
+    {
+        const float prevDays = _prevGameDays;
+        const float gameDaysElapsed = nowDays - _prevGameDays;
+        _prevGameDays = nowDays;
+
+        if (gameDaysElapsed > RadClimatePolicy::kTimeJumpThresholdDays)
+        {
+            const float jumpGameSeconds = std::min(
+                RadClimatePolicy::ElapsedGameSeconds(gameDaysElapsed),
+                RadClimatePolicy::kMaximumTimeJumpHours * 3600.0f);
+            const auto jumpStart = std::chrono::steady_clock::now();
+            result = RadClimatePolicy::StepTimeJump(_state, environment, protection, jumpGameSeconds, RadClimatePolicy::kMaximumStepSeconds, tuning);
+            const double jumpWallMs = std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - jumpStart).count();
+            const auto jumpSubsteps = static_cast<unsigned>(std::ceil(
+                jumpGameSeconds / RadClimatePolicy::kMaximumStepSeconds));
+            branchName = "time_jump";
+            appliedSeconds = jumpGameSeconds;
+
+            if (auto logger = spdlog::get("FalloutAnomaly"))
+                logger->info("[ClimateTime] jump: prev={:.6f} now={:.6f} deltaDays={:.6f} freezeFrame={} pausedMenu={} branch={} appliedSec={:.2f} substeps={} wallMs={:.3f}",
+                    prevDays, nowDays, gameDaysElapsed, pauseInfo.freezeFramePause, pauseInfo.pausedByMenu, branchName, appliedSeconds, jumpSubsteps, jumpWallMs);
+        }
+        else if (pauseInfo.isPaused || gameDaysElapsed <= 0.0f)
+        {
+            result = RadClimatePolicy::Step(_state, environment, protection, 0.0f, tuning);
+            branchName = "paused";
+            appliedSeconds = 0.0f;
+        }
+        else
+        {
+            const float gameSeconds = RadClimatePolicy::ElapsedGameSeconds(gameDaysElapsed);
+            if (gameSeconds > RadClimatePolicy::kMaximumStepSeconds)
+            {
+                result = RadClimatePolicy::StepTimeJump(_state, environment, protection, gameSeconds, RadClimatePolicy::kMaximumStepSeconds, tuning);
+            }
+            else
+            {
+                result = RadClimatePolicy::Step(_state, environment, protection, gameSeconds, tuning);
+            }
+            branchName = "normal";
+            appliedSeconds = gameSeconds;
+        }
+
+        if (auto logger = spdlog::get("FalloutAnomaly"))
+            logger->trace("[ClimateTime] prev={:.6f} now={:.6f} deltaDays={:.6f} freezeFrame={} pausedMenu={} branch={} appliedSec={:.2f}",
+                prevDays, nowDays, gameDaysElapsed, pauseInfo.freezeFramePause, pauseInfo.pausedByMenu, branchName, appliedSeconds);
+    }
+    auto nextState = result.state;
+    nextState.stage = RadClimateStagePolicy::NextStage(_state.stage, nextState.coreC);
+    _state = nextState;
+    _lastAmbientC = environment.ambientC;
+    _lastEffectiveInsulation01 = result.effectiveInsulation01;
+    _lastRainy = weatherClass.rainy;
+    _lastIndoors = indoors;
+
+    ClimateEffects::OnTick(_state.stage, std::strcmp(branchName, "normal") == 0);
+
+    RadHud::GetSingleton().PushClimate(_state, environment, result);
+    RadHud::GetSingleton().PushArmor(
+        protection.insulation01,
+        result.effectiveInsulation01,
+        protection.powerArmor,
+        _protection.LastArmor());
+
+    if (_state.stage != _lastLoggedStage)
+    {
+        if (auto logger = spdlog::get("FalloutAnomaly"))
+            logger->warn("[Climate] stage={} core={:.2f}C ambient={:.1f}C wet={:.0f}% wind={:.1f} insulation={:.0f}% PA={} shelter={:.0f}% heat={:.0f}% roofed={} sprinting={} snow={} month={} weatherOverride={}",
+                StageName(_state.stage), _state.coreC, _lastAmbientC, _state.wetness01 * 100.0f,
+                environment.windMps, protection.insulation01 * 100.0f, protection.powerArmor,
+                environment.shelter01 * 100.0f, environment.heat01 * 100.0f, _shelter.LastRoofed(),
+                environment.activity01 > 0.0f, weatherClass.snow, gameMonth, weatherOverride.has_value());
+        _lastLoggedStage = _state.stage;
+    }
+
+    if (++_statusTick >= 32)
+    {
+        _statusTick = 0;
+        if (auto logger = spdlog::get("FalloutAnomaly"))
+        {
+            logger->debug("[ClimateTime] prev={:.6f} now={:.6f} freezeFrame={} pausedMenu={} branch={} appliedSec={:.2f}",
+                _prevGameDays, nowDays, pauseInfo.freezeFramePause, pauseInfo.pausedByMenu, branchName, appliedSeconds);
+            logger->debug("[Climate] core={:.2f}C ambient={:.1f}C wet={:.0f}% wind={:.1f} insulation={:.0f}% PA={} shelter={:.0f}% rainCover={:.0f}% heat={:.0f}% roofed={} indoors={} pleasant={} cloudy={} rainy={} snow={} swimming={} sprinting={} month={} weatherOverride={} stage={}",
+                _state.coreC, _lastAmbientC, _state.wetness01 * 100.0f, environment.windMps,
+                protection.insulation01 * 100.0f, protection.powerArmor,
+                environment.shelter01 * 100.0f, environment.precipitationShelter01 * 100.0f,
+                environment.heat01 * 100.0f, _shelter.LastRoofed(), _lastIndoors,
+                weatherClass.pleasant, weatherClass.cloudy, weatherClass.rainy, weatherClass.snow,
+                environment.submerged, environment.activity01 > 0.0f, gameMonth,
+                weatherOverride.has_value(), StageName(_state.stage));
+        }
+    }
+}
+
+void ClimateRuntime::Reset()
+{
+    _state = {};
+    _protection.Reset();
+    _shelter.Reset();
+    _heat.Reset();
+    _lastLoggedStage = RadClimatePolicy::HypothermiaStage::kNormal;
+    _lastAmbientC = RadClimatePolicy::kNeutralAmbientC;
+    _lastEffectiveInsulation01 = 0.0f;
+    _lastRainy = false;
+    _lastIndoors = false;
+    _statusTick = 0;
+    _prevGameDays = -1.0f;
+    ClimateEffects::Reset();
+}
+
+RadClimateSerialization::PersistedState ClimateRuntime::SnapshotForSave() const noexcept
+{
+    return RadClimateSerialization::Snapshot(_state);
+}
+
+void ClimateRuntime::RestoreFromSave(const RadClimateSerialization::PersistedState& state) noexcept
+{
+    _state = RadClimateSerialization::Restore(state);
+    _lastLoggedStage = _state.stage;
+    _prevGameDays = -1.0f;
+    ClimateEffects::Resend();
+}
+
+void ClimateRuntime::DebugForceStage(int stage) noexcept
+{
+    constexpr float kStageMidC[] = { 37.0f, 36.0f, 35.0f, 33.75f, 31.5f, 29.0f };
+    const int index = std::clamp(stage, 0, 5);
+    _state.coreC = kStageMidC[index];
+    if (index == 0)
+        _state.wetness01 = 0.0f;
+    _state.stage = static_cast<RadClimatePolicy::HypothermiaStage>(index);
+    ClimateEffects::Resend();
+}

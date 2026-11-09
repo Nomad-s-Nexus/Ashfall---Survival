@@ -1,0 +1,38 @@
+{
+  "_comment": "Each key is the rad level a stage starts at. The DLL reads only each stage's name, which it writes to the log when the stage changes. A missing file or an empty stages object turns the stage perks and stage END/STR penalties off. The END/STR penalties are compiled in RadiationEngine::kStagePenalties to match the stage perks in RadiationOverhaul.esp.",
+  "stages": {
+    "0": {
+      "name": "Healthy"
+    },
+    "100": {
+      "name": "Minor Exposure"
+    },
+    "200": {
+      "name": "Acute Poisoning"
+    },
+    "300": {
+      "name": "Advanced Poisoning"
+    },
+    "400": {
+      "name": "Critical Poisoning"
+    },
+    "500": {
+      "name": "Severe Injury"
+    },
+    "600": {
+      "name": "Extreme Injury"
+    },
+    "700": {
+      "name": "Critical Injury"
+    },
+    "800": {
+      "name": "Terminal Injury"
+    },
+    "900": {
+      "name": "Fatal Radiation"
+    },
+    "1000": {
+      "name": "Systemic Failure"
+    }
+  }
+}

@@ -1,0 +1,71 @@
+{
+  "compiler": "FO4IDE built-in Papyrus engine (compile_papyrus, engine=builtin)",
+  "command": "compile_papyrus source=<repo>/deploy/Scripts/Source/User/<Script>.psc output=<repo>/deploy/Scripts imports=<vanilla script sources> flags=Institute_Papyrus_Flags.flg debug_info=false engine=builtin",
+  "sourceRoot": "deploy/Scripts/Source/User",
+  "scripts": [
+    {
+      "script": "RadNatives",
+      "source": "deploy/Scripts/Source/User/RadNatives.psc",
+      "sourceSha256": "4d59e3ccaad6b8a6dfd34ea86c124ca4111fc0680ab0e44a30b3b5542ab3ffd6",
+      "pex": "deploy/Scripts/RadNatives.pex",
+      "pexSha256": "04a094607e49c77e29707b1320de437d06d78ad3cb3ad0e594204fadab2d74d5",
+      "recordedSource": "E:\\Projects\\Forgejo\\Nomad-s-Nexus\\Ashfall\\.claude\\worktrees\\npc-disease-system-41f782\\deploy\\Scripts\\Source\\User\\RadNatives.psc"
+    },
+    {
+      "script": "RadOutbreakDoctorStation",
+      "source": "deploy/Scripts/Source/User/RadOutbreakDoctorStation.psc",
+      "sourceSha256": "a0dffaa56d228a3dc6433671a368ef04cde5eb7c6b7d34ceb79045de21e8479f",
+      "pex": "deploy/Scripts/RadOutbreakDoctorStation.pex",
+      "pexSha256": "4e6c21e7bcebe608eb49da16ca530681a7a20da4ffce5a8e4d6cf29bb412efc0",
+      "recordedSource": "E:\\Projects\\Forgejo\\Nomad-s-Nexus\\Ashfall\\.claude\\worktrees\\npc-disease-system-41f782\\deploy\\Scripts\\Source\\User\\RadOutbreakDoctorStation.psc"
+    },
+    {
+      "script": "RadOutbreakEffect",
+      "source": "deploy/Scripts/Source/User/RadOutbreakEffect.psc",
+      "sourceSha256": "0fbbf04742888c03d0cb948668cab687fcda5799dade51fadc335ab2bcac659e",
+      "pex": "deploy/Scripts/RadOutbreakEffect.pex",
+      "pexSha256": "1138f5468d81f3dacdd33d8a4eca3a11e8beb6343d3caba591a97612522fca64",
+      "recordedSource": "E:\\Projects\\Forgejo\\Nomad-s-Nexus\\Ashfall\\.claude\\worktrees\\npc-disease-system-41f782\\deploy\\Scripts\\Source\\User\\RadOutbreakEffect.psc"
+    },
+    {
+      "script": "RadOutbreakQuest",
+      "source": "deploy/Scripts/Source/User/RadOutbreakQuest.psc",
+      "sourceSha256": "b19069f023e2e247c50442802de74909916ab32439dad219a1dcd40a71707d47",
+      "pex": "deploy/Scripts/RadOutbreakQuest.pex",
+      "pexSha256": "e22dfbd7a385d9ede2d0aeb2f4d8b183dddd85b8bc2590c8e0e1f2e53f807477",
+      "recordedSource": "E:\\Projects\\Forgejo\\Nomad-s-Nexus\\Ashfall\\.claude\\worktrees\\cold-and-diseases-9b1f92\\deploy\\Scripts\\Source\\User\\RadOutbreakQuest.psc"
+    },
+    {
+      "script": "RadShowcase",
+      "source": "deploy/Scripts/Source/User/RadShowcase.psc",
+      "sourceSha256": "858173546b760390bf18d67f1fb9c363a8ec86df966d946031b5707e22122ec5",
+      "pex": "deploy/Scripts/RadShowcase.pex",
+      "pexSha256": "875c04f485155f65db3d2fd07bc41cf4c07ac40302f07b0ee4a05be1b61bca46",
+      "recordedSource": "E:\\Projects\\Forgejo\\Nomad-s-Nexus\\Ashfall\\.claude\\worktrees\\cold-and-diseases-9b1f92\\deploy\\Scripts\\Source\\User\\RadShowcase.psc"
+    },
+    {
+      "script": "RadStormFX",
+      "source": "deploy/Scripts/Source/User/RadStormFX.psc",
+      "sourceSha256": "427899781b276644b67642fe0a8a0490f10f1011ce755633b04608dbb8d8fa92",
+      "pex": "deploy/Scripts/RadStormFX.pex",
+      "pexSha256": "fc8acbc653c0716d66df6b0b5c29664ea330a6f237b6fc6f1ab872179078bfb9",
+      "recordedSource": "E:\\Projects\\Forgejo\\Nomad-s-Nexus\\Ashfall\\.claude\\worktrees\\ashfall-rad-overhaul-handoff-256453\\.claude-wt\\domerecords\\deploy\\Scripts\\Source\\User\\RadStormFX.psc"
+    },
+    {
+      "script": "RadSurvivalDiseases",
+      "source": "deploy/Scripts/Source/User/RadSurvivalDiseases.psc",
+      "sourceSha256": "94cce28bbfa1cdc87c8486e0ebea39a0050fddc456fb773c12a990c087895900",
+      "pex": "deploy/Scripts/RadSurvivalDiseases.pex",
+      "pexSha256": "1120c2dc2c93f2b51925557c65f41200e412f4b21b7a4225e33013b567221e57",
+      "recordedSource": "E:\\Projects\\Forgejo\\Nomad-s-Nexus\\Ashfall\\.claude\\worktrees\\cold-and-diseases-9b1f92\\deploy\\Scripts\\Source\\User\\RadSurvivalDiseases.psc"
+    },
+    {
+      "script": "RadSurvivalQuest",
+      "source": "deploy/Scripts/Source/User/RadSurvivalQuest.psc",
+      "sourceSha256": "2e2f971a301598a560359a6e023e0c4906ba5e1e44dee6b5b17ad6f94257bec7",
+      "pex": "deploy/Scripts/RadSurvivalQuest.pex",
+      "pexSha256": "a295f752523d3aab7502531a4d97b0073e926c75d7efb9c2bc4773bb20da0bb9",
+      "recordedSource": "E:\\Projects\\Forgejo\\Nomad-s-Nexus\\Ashfall\\.claude\\worktrees\\cold-and-diseases-9b1f92\\deploy\\Scripts\\Source\\User\\RadSurvivalQuest.psc"
+    }
+  ]
+}

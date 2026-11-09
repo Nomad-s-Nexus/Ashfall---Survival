@@ -1,0 +1,164 @@
+{
+  "clips": [
+    {
+      "file": "rad_outbreak_female_cough_light_01.wav",
+      "sex": "female",
+      "kind": "cough_light",
+      "duration_seconds": 0.62,
+      "sha256": "e322c3986b7c0fd2c4706d46fc97deb883aebab6e940580d187a1626007eff5b",
+      "prompt": "A female adult short dry single cough, dry close-mic recording, no room reverb, no background noise, no music, no speech words, single event",
+      "format": "wav 44.1kHz mono 16-bit",
+      "generator": "ElevenLabs text-to-sound-effects (eleven_text_to_sound_v2)"
+    },
+    {
+      "file": "rad_outbreak_female_cough_light_02.wav",
+      "sex": "female",
+      "kind": "cough_light",
+      "duration_seconds": 0.98,
+      "sha256": "2fc7e44167620eba6450cee6a7ad1215c83b1841357f621af7660c8da5aa182f",
+      "prompt": "A female adult quick light dry throat-clearing cough, dry close-mic recording, no room reverb, no background noise, no music, no speech words, single event",
+      "format": "wav 44.1kHz mono 16-bit",
+      "generator": "ElevenLabs text-to-sound-effects (eleven_text_to_sound_v2)"
+    },
+    {
+      "file": "rad_outbreak_female_cough_light_03.wav",
+      "sex": "female",
+      "kind": "cough_light",
+      "duration_seconds": 1.0,
+      "sha256": "62e8ee8941b3f75f42018801abf3d21d9a29c717f8eaeefc135213ef7e8c1ccd",
+      "prompt": "A female adult brief soft dry cough, dry close-mic recording, no room reverb, no background noise, no music, no speech words, single event",
+      "format": "wav 44.1kHz mono 16-bit",
+      "generator": "ElevenLabs text-to-sound-effects (eleven_text_to_sound_v2)"
+    },
+    {
+      "file": "rad_outbreak_female_cough_wet_01.wav",
+      "sex": "female",
+      "kind": "cough_wet",
+      "duration_seconds": 1.27,
+      "sha256": "8c9ec684cda13efd0bea6d89bb0e45945886be3f86cef5d70a3454226f0c23c3",
+      "prompt": "A female adult chesty wet phlegmy sick cough, two quick coughs, dry close-mic recording, no room reverb, no background noise, no music, no speech words, single event",
+      "format": "wav 44.1kHz mono 16-bit",
+      "generator": "ElevenLabs text-to-sound-effects (eleven_text_to_sound_v2)"
+    },
+    {
+      "file": "rad_outbreak_female_cough_wet_02.wav",
+      "sex": "female",
+      "kind": "cough_wet",
+      "duration_seconds": 1.49,
+      "sha256": "0e581c2eca59f9141162dbed27513ed211e1616bbe2fbd238f5752a261dd1ffa",
+      "prompt": "A female adult deep wet rattling sick chest cough, dry close-mic recording, no room reverb, no background noise, no music, no speech words, single event",
+      "format": "wav 44.1kHz mono 16-bit",
+      "generator": "ElevenLabs text-to-sound-effects (eleven_text_to_sound_v2)"
+    },
+    {
+      "file": "rad_outbreak_female_groan_01.wav",
+      "sex": "female",
+      "kind": "groan",
+      "duration_seconds": 1.62,
+      "sha256": "3e91666cb0c5b2a006cbd5c622b3a70c1cf3b50a4bbc349382b8868cdddc8873",
+      "prompt": "A female adult weak labored sick groan with a shaky tired breath, dry close-mic recording, no room reverb, no background noise, no music, no speech words, single event",
+      "format": "wav 44.1kHz mono 16-bit",
+      "generator": "ElevenLabs text-to-sound-effects (eleven_text_to_sound_v2)"
+    },
+    {
+      "file": "rad_outbreak_female_sneeze_01.wav",
+      "sex": "female",
+      "kind": "sneeze",
+      "duration_seconds": 0.78,
+      "sha256": "108df0aad958e198688120431123c8937be9b2f52a25f306ca7e8a8ebe447a00",
+      "prompt": "A female adult single sneeze, dry close-mic recording, no room reverb, no background noise, no music, no speech words, single event",
+      "format": "wav 44.1kHz mono 16-bit",
+      "generator": "ElevenLabs text-to-sound-effects (eleven_text_to_sound_v2)"
+    },
+    {
+      "file": "rad_outbreak_female_sneeze_02.wav",
+      "sex": "female",
+      "kind": "sneeze",
+      "duration_seconds": 0.62,
+      "sha256": "2a5caa9fde95bd71cce10c2bcee32e5fa59391dba5ffe711b810b260af85bf9e",
+      "prompt": "A female adult single sneeze with a small sniff after, dry close-mic recording, no room reverb, no background noise, no music, no speech words, single event",
+      "format": "wav 44.1kHz mono 16-bit",
+      "generator": "ElevenLabs text-to-sound-effects (eleven_text_to_sound_v2)"
+    },
+    {
+      "file": "rad_outbreak_male_cough_light_01.wav",
+      "sex": "male",
+      "kind": "cough_light",
+      "duration_seconds": 0.8,
+      "sha256": "8695e5cc5d9d529c9f0744a74375b5a6dd7845680fa79893a7a429661660e2a2",
+      "prompt": "A male adult short dry single cough, dry close-mic recording, no room reverb, no background noise, no music, no speech words, single event",
+      "format": "wav 44.1kHz mono 16-bit",
+      "generator": "ElevenLabs text-to-sound-effects (eleven_text_to_sound_v2)"
+    },
+    {
+      "file": "rad_outbreak_male_cough_light_02.wav",
+      "sex": "male",
+      "kind": "cough_light",
+      "duration_seconds": 0.76,
+      "sha256": "642ec7e907693da90b2c4079c40ea04466915c80eb20126fa93368a3bb8eb521",
+      "prompt": "A male adult quick light dry throat-clearing cough, dry close-mic recording, no room reverb, no background noise, no music, no speech words, single event",
+      "format": "wav 44.1kHz mono 16-bit",
+      "generator": "ElevenLabs text-to-sound-effects (eleven_text_to_sound_v2)"
+    },
+    {
+      "file": "rad_outbreak_male_cough_light_03.wav",
+      "sex": "male",
+      "kind": "cough_light",
+      "duration_seconds": 0.66,
+      "sha256": "16001097a7eea99bd662b75d7c8c51b6acfb3ce257b7990aaf05f2824f6a642d",
+      "prompt": "A male adult brief soft dry cough, dry close-mic recording, no room reverb, no background noise, no music, no speech words, single event",
+      "format": "wav 44.1kHz mono 16-bit",
+      "generator": "ElevenLabs text-to-sound-effects (eleven_text_to_sound_v2)"
+    },
+    {
+      "file": "rad_outbreak_male_cough_wet_01.wav",
+      "sex": "male",
+      "kind": "cough_wet",
+      "duration_seconds": 1.25,
+      "sha256": "e993a95fd0e0e1c552094e59f1c21b0f703e5c5ce0ea4592a837bdafafe9b737",
+      "prompt": "A male adult chesty wet phlegmy sick cough, two quick coughs, dry close-mic recording, no room reverb, no background noise, no music, no speech words, single event",
+      "format": "wav 44.1kHz mono 16-bit",
+      "generator": "ElevenLabs text-to-sound-effects (eleven_text_to_sound_v2)"
+    },
+    {
+      "file": "rad_outbreak_male_cough_wet_02.wav",
+      "sex": "male",
+      "kind": "cough_wet",
+      "duration_seconds": 1.39,
+      "sha256": "4b061888173873ddbb605f3306b476a26367e2e4865a2140f6beda12eb1615ee",
+      "prompt": "A male adult deep wet rattling sick chest cough, dry close-mic recording, no room reverb, no background noise, no music, no speech words, single event",
+      "format": "wav 44.1kHz mono 16-bit",
+      "generator": "ElevenLabs text-to-sound-effects (eleven_text_to_sound_v2)"
+    },
+    {
+      "file": "rad_outbreak_male_groan_01.wav",
+      "sex": "male",
+      "kind": "groan",
+      "duration_seconds": 1.54,
+      "sha256": "7fb3eeebdcd9781870ff548e0216c28e40593f7045bd2878f6ab2a805dcc0c8e",
+      "prompt": "A male adult weak labored sick groan with a shaky tired breath, dry close-mic recording, no room reverb, no background noise, no music, no speech words, single event",
+      "format": "wav 44.1kHz mono 16-bit",
+      "generator": "ElevenLabs text-to-sound-effects (eleven_text_to_sound_v2)"
+    },
+    {
+      "file": "rad_outbreak_male_sneeze_01.wav",
+      "sex": "male",
+      "kind": "sneeze",
+      "duration_seconds": 0.63,
+      "sha256": "f6ad9f5eab326e3a213aebb42665a392e5377b465e23ce4a7c484c9c43eb6dba",
+      "prompt": "A male adult single sneeze, dry close-mic recording, no room reverb, no background noise, no music, no speech words, single event",
+      "format": "wav 44.1kHz mono 16-bit",
+      "generator": "ElevenLabs text-to-sound-effects (eleven_text_to_sound_v2)"
+    },
+    {
+      "file": "rad_outbreak_male_sneeze_02.wav",
+      "sex": "male",
+      "kind": "sneeze",
+      "duration_seconds": 0.82,
+      "sha256": "a13ada6371cc3c8cb296903b35da70f2404d86eea1fee51dec814b7d993a0ef3",
+      "prompt": "A male adult single sneeze with a small sniff after, dry close-mic recording, no room reverb, no background noise, no music, no speech words, single event",
+      "format": "wav 44.1kHz mono 16-bit",
+      "generator": "ElevenLabs text-to-sound-effects (eleven_text_to_sound_v2)"
+    }
+  ]
+}
