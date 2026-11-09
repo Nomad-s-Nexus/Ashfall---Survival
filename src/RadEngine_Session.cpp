@@ -1,0 +1,170 @@
+#include "RadEngine_Internal.h"
+#include "RadMaskOwnership.h"
+
+using namespace RadInternal;
+
+
+float RadiationEngine::GameDays() const
+{
+    auto* cal = RE::Calendar::GetSingleton();
+    if (cal && cal->gameDaysPassed)
+        return cal->gameDaysPassed->GetValue();
+    return 0.0f;
+}
+
+
+void RadiationEngine::RevertState()
+{
+    _appliedCarryPen  = 0.0f;
+    _appliedHealPen   = 0.0f;
+    _appliedSpeedPen  = 0.0f;
+    _appliedApPen     = 0.0f;
+    _penaltiesFromSave = false;
+    _playSeconds     = 0.0;
+    _nextStormPlaySec = 0.0;
+    _lastRadstormSec  = -1.0e30;
+    _lastRadWeatherFormID = 0;
+    _stormScheduled   = false;
+    ResetStormGhoulStateForLoad();
+    _fireRefs.clear();
+    _filterCharge     = 100.0f;
+    _filterLowWarned  = 0;
+    _maskCondition    = 100.0f;
+    _conditionLowWarned = 0;
+    RadMaskOwnership::Clear();
+    Log()->info("[Revert] Storm clock reset (new game / pre-load).");
+}
+
+
+void RadiationEngine::Notify(const char* message, bool warning) const
+{
+    RE::SendHUDMessage::ShowHUDMessage(message, "", true, warning);
+}
+
+
+void RadiationEngine::OnNewGame()
+{
+    _forceClearOnEntry = true;
+    _appliedCarryPen = _appliedHealPen = _appliedSpeedPen = _appliedApPen = 0.0f;
+}
+
+
+void RadiationEngine::OnPostLoad()
+{
+    auto logger = Log();
+    ResetStormGhoulStateForLoad();
+    _forceClearOnEntry = false;
+    _spawnRadBlockTicks = 0;
+
+    if (_tissueGlobal)
+        _tissueDamage = _tissueGlobal->GetValue();
+    if (_permanentTissueGlobal)
+        _permanentTissueDamage = _permanentTissueGlobal->GetValue();
+
+    _prevRads = -1.0f;
+    _prevHP   = -1.0f;
+    _prevGameDays = -1.0f;
+    _radAwayWindowTicks = 0;
+
+    _maskWasOn = -1;
+
+    _chokeTicks = 0;
+    _chokeCalmTicks = 0;
+    _chokeSoundTick = 0;
+    _chokeNotified = false;
+
+    _wasInRadWeather = -1;
+    _wasRadExposed = -1;
+    _radExposedCandidate = -1;
+    _radExposedStreak = 0;
+    _lastRadWeatherFormID = 0;
+    _autoMaskEquipped = false;
+    _npcMaskScanTick = 0;
+    _autoMaskedNpcs.clear();
+    const auto ownership = RadMaskOwnership::Snapshot();
+    if (!ownership.empty())
+    {
+        _wasInRadWeather = 1;
+        auto* player = RE::PlayerCharacter::GetSingleton();
+        const auto playerID = player ? player->GetFormID() : 0;
+        for (const auto& entry : ownership)
+        {
+            if (playerID != 0 && entry.actorFormID == playerID)
+            {
+                _autoMaskEquipped = true;
+                _wasRadExposed = 1;
+            }
+            else
+                _autoMaskedNpcs.insert(entry.actorFormID);
+        }
+    }
+
+    _appliedEndPenalty = 0;
+    _appliedStrPenalty = 0;
+    _symptomTick     = 0;
+    _symptomWarned   = 0;
+
+    DispelNegativeSpecials();
+    RepairLeakedCarryWeight();
+
+
+    if (_stormScheduled && _playSeconds >= _nextStormPlaySec)
+    {
+        ScheduleNextStorm();
+        logger->info("[Storm] Loaded a save with a past-due storm schedule — re-armed a full gap out "
+                     "(was 4-8 min, which caused back-to-back storms on reload).");
+    }
+    ClearFireRefs();
+    ClearStormGhouls();
+    ClearStormIMAD();
+    TriggerStormFX(false);
+    _pendingLoadFXCleanup = true;
+    if (_stormSoundHandle.IsValid()) _stormSoundHandle.FadeOutAndRelease(500);
+    if (_ambientBedHandle.IsValid()) _ambientBedHandle.FadeOutAndRelease(500);
+    _curStormBed = nullptr; _curAmbientBed = nullptr;
+    _stormPhase        = StormPhase::Idle;
+    _shakeBurstStep    = -1;
+    _shakeRumbleTick   = -1;
+    _stormTicksLeft    = 0;
+    _activeStormType   = -1;
+    _forcedStormType   = -1;
+    _forceStormNow     = false;
+    _stormFXVisible    = false;
+    _stormNukeFired    = false;
+    _firestormAwaitingNuke = false;
+    _nukeAttempts      = 0;
+    _nukeWaitTicks     = 0;
+    _shakeBurstRetries = 0;
+    _debugSkipToActive = false;
+    _stormRollInTicks  = 0;
+    _dustBuildupActive = false;
+    _stormPeakFired    = false;
+    _stormExposedTicks = 0;
+    _weatherForced     = false;
+    _weatherHandoffWaitTicks = 0;
+    _debugWeatherHold  = false;
+    RadHud::GetSingleton().PushStorm(static_cast<int>(StormPhase::Idle), 0, 0.0f, true, false);
+
+    auto* cal = RE::Calendar::GetSingleton();
+    if (cal)
+    {
+        float currentTime = GameDays();
+        if (_lastGameTime > 0.0f && currentTime > _lastGameTime)
+        {
+            float hoursPassed = (currentTime - _lastGameTime) * 24.0f;
+            if (hoursPassed >= 0.5f && hoursPassed <= 48.0f)
+            {
+                float rads = 0.0f;
+                if (auto* p = RE::PlayerCharacter::GetSingleton())
+                    if (auto* av = RE::ActorValue::GetSingleton(); av && av->rads)
+                        rads = p->GetActorValue(*av->rads);
+                ApplyRestTissueHeal(hoursPassed, rads);
+            }
+        }
+        _lastGameTime = currentTime;
+    }
+    else
+    {
+        logger->warn("[Sleep] RE::Calendar unavailable; sleep healing skipped this load.");
+    }
+}

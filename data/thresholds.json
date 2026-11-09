@@ -1,0 +1,141 @@
+{
+  "_comment": "Only each stage's name is consumed by the current DLL. endPenalty/strPenalty, limbDamagePercent, healthDamagePercent, fastTravelDisabled, and radAwayEffectiveness are retained as legacy design/reference data and do NOT tune runtime behavior. Runtime SPECIAL penalties are defined in RadiationEngine::kStagePenalties; other mechanics are implemented elsewhere.",
+  "stages": {
+    "0": {
+      "name": "Healthy",
+      "rangeMin": 0,
+      "rangeMax": 99,
+      "description": "Safe radiation levels",
+      "endPenalty": 0,
+      "strPenalty": 0,
+      "limbDamagePercent": 0.0,
+      "healthDamagePercent": 0.0,
+      "fastTravelDisabled": false,
+      "radAwayEffectiveness": 1.0
+    },
+    "100": {
+      "name": "Minor Exposure",
+      "rangeMin": 100,
+      "rangeMax": 199,
+      "description": "Slight nausea, barely noticeable",
+      "endPenalty": 1,
+      "strPenalty": 0,
+      "limbDamagePercent": 0.0,
+      "healthDamagePercent": 0.0,
+      "fastTravelDisabled": false,
+      "radAwayEffectiveness": 1.0
+    },
+    "200": {
+      "name": "Acute Poisoning",
+      "rangeMin": 200,
+      "rangeMax": 299,
+      "description": "Visible symptoms, mild weakness",
+      "endPenalty": 1,
+      "strPenalty": 1,
+      "limbDamagePercent": 0.0,
+      "healthDamagePercent": 0.0,
+      "fastTravelDisabled": false,
+      "radAwayEffectiveness": 1.0
+    },
+    "300": {
+      "name": "Advanced Poisoning",
+      "rangeMin": 300,
+      "rangeMax": 399,
+      "description": "Noticeable weakness sets in",
+      "endPenalty": 2,
+      "strPenalty": 1,
+      "limbDamagePercent": 0.0,
+      "healthDamagePercent": 0.0,
+      "fastTravelDisabled": false,
+      "radAwayEffectiveness": 0.95
+    },
+    "400": {
+      "name": "Critical Poisoning",
+      "rangeMin": 400,
+      "rangeMax": 499,
+      "description": "Internal damage, body weakening",
+      "endPenalty": 2,
+      "strPenalty": 2,
+      "limbDamagePercent": 0.0,
+      "healthDamagePercent": 0.05,
+      "fastTravelDisabled": false,
+      "radAwayEffectiveness": 0.90
+    },
+    "500": {
+      "name": "Severe Injury",
+      "rangeMin": 500,
+      "rangeMax": 599,
+      "description": "Organ stress, slow health loss",
+      "endPenalty": 3,
+      "strPenalty": 2,
+      "limbDamagePercent": 0.5,
+      "healthDamagePercent": 0.08,
+      "fastTravelDisabled": false,
+      "radAwayEffectiveness": 0.80
+    },
+    "600": {
+      "name": "Extreme Injury",
+      "rangeMin": 600,
+      "rangeMax": 699,
+      "description": "Multiple systems struggling",
+      "endPenalty": 3,
+      "strPenalty": 3,
+      "limbDamagePercent": 1.0,
+      "healthDamagePercent": 0.12,
+      "fastTravelDisabled": true,
+      "radAwayEffectiveness": 0.65
+    },
+    "700": {
+      "name": "Critical Injury",
+      "rangeMin": 700,
+      "rangeMax": 799,
+      "description": "Body failing, steady health loss",
+      "endPenalty": 4,
+      "strPenalty": 3,
+      "limbDamagePercent": 1.5,
+      "healthDamagePercent": 0.18,
+      "fastTravelDisabled": true,
+      "radAwayEffectiveness": 0.45
+    },
+    "800": {
+      "name": "Terminal Injury",
+      "rangeMin": 800,
+      "rangeMax": 899,
+      "description": "System failure approaching",
+      "endPenalty": 5,
+      "strPenalty": 4,
+      "limbDamagePercent": 2.0,
+      "healthDamagePercent": 0.30,
+      "fastTravelDisabled": true,
+      "radAwayEffectiveness": 0.25
+    },
+    "900": {
+      "name": "Fatal Radiation",
+      "rangeMin": 900,
+      "rangeMax": 999,
+      "description": "Living corpse state",
+      "endPenalty": 6,
+      "strPenalty": 4,
+      "limbDamagePercent": 2.5,
+      "healthDamagePercent": 0.45,
+      "fastTravelDisabled": true,
+      "radAwayEffectiveness": 0.10
+    },
+    "1000": {
+      "name": "Systemic Failure",
+      "rangeMin": 1000,
+      "rangeMax": 999999,
+      "description": "Complete systemic failure - death near",
+      "endPenalty": 7,
+      "strPenalty": 5,
+      "limbDamagePercent": 3.0,
+      "healthDamagePercent": 0.60,
+      "fastTravelDisabled": true,
+      "radAwayEffectiveness": 0.0
+    }
+  },
+  "balanceNotes": {
+    "legacyFields": "All fields except stage name are retained for design/history only in the current build. Editing them does not change runtime behavior.",
+    "runtimeTuning": "Runtime SPECIAL penalties are compiled in RadiationEngine::kStagePenalties. Filter, condition, choking, ambient audio, and storm frequency use FalloutAnomalyRadiation.ini."
+  }
+}

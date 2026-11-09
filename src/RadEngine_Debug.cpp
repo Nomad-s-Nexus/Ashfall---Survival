@@ -1,0 +1,641 @@
+#include "RadEngine_Internal.h"
+#include "RadNeedsTuning.h"
+
+#include <RE/B/BSScriptUtil.h>
+#include <RE/G/GameScript.h>
+
+using namespace RadInternal;
+
+constexpr int kDebugLeadTicks = 10 * 4;
+
+constexpr std::size_t kMaxPendingDebugCmds = 32;
+
+namespace
+{
+    constexpr const char* kHudLayoutPrefix = "hudlayout:";
+
+    bool HudLayoutRequestsSave(const std::string& command)
+    {
+        try
+        {
+            return json::parse(command.substr(std::strlen(kHudLayoutPrefix))).value("save", false);
+        }
+        catch (...)
+        {
+            return false;
+        }
+    }
+
+    std::string WithHudLayoutSave(const std::string& command)
+    {
+        try
+        {
+            auto body = json::parse(command.substr(std::strlen(kHudLayoutPrefix)));
+            body["save"] = true;
+            return kHudLayoutPrefix + body.dump();
+        }
+        catch (...)
+        {
+            return command;
+        }
+    }
+
+    std::string HudLayoutWidgetKey(const std::string& command)
+    {
+        try
+        {
+            return json::parse(command.substr(std::strlen(kHudLayoutPrefix))).value("widget", std::string{});
+        }
+        catch (...)
+        {
+            return {};
+        }
+    }
+}
+
+void RadiationEngine::DebugForceStorm(int typeIndex)
+{
+    Log()->warn("[DIAG] DebugForceStorm entry typeIndex={}.", typeIndex);
+    if (typeIndex < 0 || typeIndex >= kStormTypeTableSize) return;
+    ClearFireRefs();
+    ClearStormGhouls();
+    ClearStormIMAD();
+    TriggerStormFX(false);
+    _stormFXVisible = false;
+    _stormNukeFired = false;
+    if (_weatherForced) ReleaseStormWeather();
+    else ResetStormWeatherLatches();
+    _stormPhase      = StormPhase::Idle;
+    _shakeBurstStep  = -1;
+    _shakeRumbleTick = -1;
+    _shakeBurstRetries = 0;
+    _firestormAwaitingNuke = false;
+    _nukeAttempts    = 0;
+    _nukeWaitTicks   = 0;
+    _debugSkipToActive = false;
+    _activeStormType = -1;
+    _forcedStormType   = typeIndex;
+    _forceStormNow     = true;
+    _forcedLeadTicks   = kDebugLeadTicks;
+    Log()->warn("[DEBUG] Force storm '{}' — lead {} s (debug-shortened) + warning {} s = {} s to impact.",
+        kStormTypes[typeIndex].name, kDebugLeadTicks / 4,
+        kStormTypes[typeIndex].warningTicks / 4,
+        (kDebugLeadTicks + kStormTypes[typeIndex].warningTicks) / 4);
+}
+
+
+void RadiationEngine::DebugEndStorm()
+{
+    ClearFireRefs();
+    ClearStormGhouls();
+    ClearStormIMAD();
+    TriggerStormFX(false);
+    ForceClearAndSilence();
+    _stormPhase       = StormPhase::Idle;
+    _shakeBurstStep   = -1;
+    _shakeRumbleTick  = -1;
+    _shakeBurstRetries = 0;
+    _firestormAwaitingNuke = false;
+    _nukeAttempts     = 0;
+    _nukeWaitTicks    = 0;
+    _debugSkipToActive = false;
+    _activeStormType  = -1;
+    _stormTicksLeft   = 0;
+    _stormRollInTicks = 0;
+    _stormFXVisible   = false;
+    _stormNukeFired   = false;
+    _forceStormNow    = false;
+    _forcedStormType  = -1;
+    ScheduleNextStorm();
+    RadHud::GetSingleton().PushStorm(static_cast<int>(StormPhase::Idle), 0, 0.0f, true, false);
+    Log()->info("[DEBUG] Storm force-ended; weather released, phase reset to Idle.");
+    Notify("[DEBUG] Storm ended.", false);
+}
+
+
+void RadiationEngine::DebugAddTissue(float tissue, float permanent)
+{
+    _tissueDamage          = std::min(kTissueMax, _tissueDamage + tissue);
+    _permanentTissueDamage = std::min(_tissueDamage, _permanentTissueDamage + permanent);
+    if (_tissueGlobal)          _tissueGlobal->value = _tissueDamage;
+    if (_permanentTissueGlobal) _permanentTissueGlobal->value = _permanentTissueDamage;
+    char msg[64];
+    std::snprintf(msg, sizeof(msg), "[DEBUG] tissue %.0f (perm %.0f)", _tissueDamage, _permanentTissueDamage);
+    Notify(msg, false);
+}
+
+
+void RadiationEngine::DebugAddRads(float rads)
+{
+    auto* player = RE::PlayerCharacter::GetSingleton();
+    auto* av = RE::ActorValue::GetSingleton();
+    if (player && av && av->rads)
+        player->ModActorValue(RE::ACTOR_VALUE_MODIFIER::kDamage, *av->rads, rads);
+}
+
+
+void RadiationEngine::DebugClearAll()
+{
+    _tissueDamage = 0.0f;
+    _permanentTissueDamage = 0.0f;
+    if (_tissueGlobal)          _tissueGlobal->value = _tissueDamage;
+    if (_permanentTissueGlobal) _permanentTissueGlobal->value = _permanentTissueDamage;
+    auto* player = RE::PlayerCharacter::GetSingleton();
+    auto* av = RE::ActorValue::GetSingleton();
+    if (player && av && av->rads)
+        player->ModActorValue(RE::ACTOR_VALUE_MODIFIER::kDamage, *av->rads, -100000.0f);
+    Notify("[DEBUG] Cleared rads + tissue.", false);
+}
+
+
+void RadiationEngine::HandleDebugCommand(const char* action)
+{
+    if (!action || !action[0]) return;
+    Log()->debug("[DIAG] HandleDebugCommand recv (JS thread): '{}'", action);
+    std::string command(action);
+    std::lock_guard<std::mutex> lock(_debugCmdMutex);
+    if (command.rfind(kHudLayoutPrefix, 0) == 0)
+    {
+        const auto widget = HudLayoutWidgetKey(command);
+        if (!widget.empty())
+        {
+            bool replacedSave = false;
+            _pendingDebugCmds.erase(
+                std::remove_if(_pendingDebugCmds.begin(), _pendingDebugCmds.end(), [&](const std::string& queued) {
+                    if (queued.rfind(kHudLayoutPrefix, 0) == 0 && HudLayoutWidgetKey(queued) == widget)
+                    {
+                        replacedSave = replacedSave || HudLayoutRequestsSave(queued);
+                        return true;
+                    }
+                    return false;
+                }),
+                _pendingDebugCmds.end());
+            if (replacedSave) command = WithHudLayoutSave(command);
+        }
+    }
+    if (_pendingDebugCmds.size() >= kMaxPendingDebugCmds)
+        _pendingDebugCmds.erase(_pendingDebugCmds.begin());
+    _pendingDebugCmds.emplace_back(std::move(command));
+}
+
+void RadiationEngine::PushGhoulSettingsToHud()
+{
+    RadHud::GetSingleton().PushGhoulSettings(_stormGhoulsEnabled, _stormGhoulSpawnChance);
+}
+
+
+void RadiationEngine::DrainDebugCommands()
+{
+    std::vector<std::string> cmds;
+    {
+        std::lock_guard<std::mutex> lock(_debugCmdMutex);
+        if (_prevRads < 0.0f)
+        {
+            _maskOverride = -1;
+            _debugShelter = false;
+            _debugGod = false;
+            ResumeDebugTime();
+            _filterSparesCache = 0;
+            _filterCountTick = 0;
+            _enclosedCheckTick = 0;
+            _weatherReturnTarget = nullptr;
+            _weatherReturnCaptured = false;
+            _releaseWeatherOverrideWhenSettled = false;
+            _weatherHandoffSettleTicks = 0;
+            return;
+        }
+        if (_pendingDebugCmds.empty()) return;
+        cmds.swap(_pendingDebugCmds);
+    }
+    for (const auto& c : cmds)
+        DispatchDebugCommand(c);
+}
+
+
+void RadiationEngine::DispatchDebugCommand(const std::string& action)
+{
+    if (action.empty()) return;
+    std::string a(action);
+    Log()->debug("[DIAG] DispatchDebugCommand (main thread): '{}'", a);
+
+    auto numAfter = [&](const char* prefix) -> float {
+        return static_cast<float>(std::atof(a.c_str() + std::strlen(prefix)));
+    };
+
+    if (a.rfind("storm:", 0) == 0)        DebugForceStorm(static_cast<int>(numAfter("storm:")));
+    else if (a == "endstorm")             DebugEndStorm();
+    else if (a == "skipwarn" || a == "skiptoactive")
+    {
+        if (_stormPhase == StormPhase::Approach || _stormPhase == StormPhase::Warning)
+        {
+            _debugSkipToActive = true;
+            _stormTicksLeft    = 1;
+            Notify("[DEBUG] Fast-forwarding to Active...", false);
+        }
+        else
+        {
+            Notify("[DEBUG] skipwarn/skiptoactive only works during Approach or Warning.", false);
+        }
+    }
+    else if (a.rfind("tissue:", 0) == 0)  DebugAddTissue(numAfter("tissue:"), 0.0f);
+    else if (a.rfind("perm:", 0) == 0)    DebugAddTissue(numAfter("perm:"), numAfter("perm:"));
+    else if (a.rfind("rads:", 0) == 0)    DebugAddRads(numAfter("rads:"));
+    else if (a == "clear")                DebugClearAll();
+    else if (a == "heal")                 DebugHeal();
+    else if (a == "weather:clear")        DebugClearWeather();
+    else if (a == "weather:lock")         DebugLockWeather();
+    else if (a.rfind("forceweather:", 0) == 0) DebugForceWeatherByForm(a.substr(std::strlen("forceweather:")));
+    else if (a.rfind("weather:", 0) == 0) DebugPreviewWeather(static_cast<int>(numAfter("weather:")));
+    else if (a == "ghouls:on")
+    {
+        _stormGhoulsEnabled = true;
+        PushGhoulSettingsToHud();
+        Notify("[DEBUG] Storm ghoul packs enabled for future storms.", false);
+    }
+    else if (a == "ghouls:off")
+    {
+        _stormGhoulsEnabled = false;
+        ClearStormGhouls();
+        PushGhoulSettingsToHud();
+        Notify("[DEBUG] Storm ghoul packs disabled and the current pack cleared.", false);
+    }
+    else if (a == "ghouls:clear")
+    {
+        ClearStormGhouls();
+        Notify("[DEBUG] Current storm ghoul pack cleared.", false);
+    }
+    else if (a == "ghouls:reset")
+    {
+        _stormGhoulsEnabled = true;
+        _stormGhoulSpawnChance = kDefaultStormGhoulSpawnChance;
+        PushGhoulSettingsToHud();
+        Notify("[DEBUG] Storm ghoul packs reset: enabled, 40% chance.", false);
+    }
+    else if (a.rfind("ghouls:chance:", 0) == 0)
+    {
+        const float percent = std::clamp(numAfter("ghouls:chance:"), 0.0f, 100.0f);
+        _stormGhoulSpawnChance = percent / 100.0f;
+        PushGhoulSettingsToHud();
+        char m[96];
+        std::snprintf(m, sizeof(m), "[DEBUG] Storm ghoul spawn chance = %.0f%%.", percent);
+        Notify(m, false);
+    }
+    else if (a.rfind("tune:", 0) == 0)
+    {
+        const auto command = std::string_view(a).substr(std::strlen("tune:"));
+        RadNeedsTuning::Handle(command);
+        if (command == "reset")
+            LoadFilterIni();
+        else
+            ApplyTuning();
+        RadHud::GetSingleton().PushNeedsTuning(RadNeedsTuning::Json());
+    }
+    else if (a == "god:on")               { _debugGod = true;  Notify("[DEBUG] God mode ON.",  false); }
+    else if (a == "god:off")              { _debugGod = false; Notify("[DEBUG] God mode OFF.", false); }
+    else if (a.rfind("time:", 0) == 0)    DebugTime(a.substr(std::strlen("time:")));
+    else if (a.rfind("needs:", 0) == 0)   DebugApplyNeeds(a.substr(std::strlen("needs:")));
+    else if (a == "give:chelation")       DebugGiveItem(0x860, kEslName, 1);
+    else if (a == "give:radaway")         DebugGiveItem(0x023742, "Fallout4.esm", 5);
+    else if (a == "give:radx")            DebugGiveItem(0x024057, "Fallout4.esm", 5);
+    else if (a == "fixstats")             DebugFixSpecial();
+    else if (a == "shelter")
+    {
+        _debugShelter = !_debugShelter;
+        _enclosedCheckTick = 0;
+        char m[64];
+        std::snprintf(m, sizeof(m), "[DEBUG] Shelter readout %s.", _debugShelter ? "ON" : "OFF");
+        Notify(m, false);
+    }
+    else if (a == "mask:scan")            DebugScanWornMask();
+    else if (a == "mask:on")              { _maskOverride = 1;  Notify("[DEBUG] Gas-mask overlay forced ON.",  false); }
+    else if (a == "mask:off")             { _maskOverride = 0;  Notify("[DEBUG] Gas-mask overlay forced OFF.", false); }
+    else if (a == "mask:auto")            { _maskOverride = -1; Notify("[DEBUG] Gas-mask overlay = auto (worn detection).", false); }
+    else if (a == "give:filter")          DebugGiveItem(kGasMaskFilterID, kEslName, 5);
+    else if (a == "filter:full")          { _filterCharge = 100.0f; _filterLowWarned = 0; Notify("[DEBUG] Filter charge = 100%.", false); }
+    else if (a == "filter:low")           { _filterCharge = 12.0f;  _filterLowWarned = 0; Notify("[DEBUG] Filter charge = 12%.", false); }
+    else if (a == "filter:dead")          { _filterCharge = 0.0f;   _filterLowWarned = 0; Notify("[DEBUG] Filter charge = 0%.", false); }
+    else if (a == "filter:replace")       ReplaceFilter(false);
+    else if (a == "give:repairkit")       DebugGiveItem(kGasMaskRepairKitID, kEslName, 5);
+    else if (a == "cond:full")            { _maskCondition = 100.0f; _conditionLowWarned = 0; Notify("[DEBUG] Mask condition = 100%.", false); }
+    else if (a == "cond:low")             { _maskCondition = 18.0f; _conditionLowWarned = 0; Notify("[DEBUG] Mask condition = 18%.", false); }
+    else if (a == "cond:broken")          { _maskCondition = 0.0f; _conditionLowWarned = 0; Notify("[DEBUG] Mask condition = 0%.", false); }
+    else if (a == "cond:repair")          RepairMask(false);
+    else if (a == "hud:open")             RadHud::GetSingleton().OpenHudLayoutEditor();
+    else if (a.rfind("hudlayout:", 0) == 0) RadHud::GetSingleton().ApplyLocalHudLayout(a.substr(std::strlen("hudlayout:")));
+    else if (a == "close")                RadHud::GetSingleton().SetDebugMenu(false);
+}
+
+
+void RadiationEngine::DebugFixSpecial()
+{
+    auto* player = RE::PlayerCharacter::GetSingleton();
+    auto* av     = RE::ActorValue::GetSingleton();
+    if (!player || !av) return;
+    auto logger = Log();
+
+    const bool hadOurPenalty = (_appliedEndPenalty != 0 || _appliedStrPenalty != 0);
+    RemoveStatModification();
+    _specialSuspendStage = (_currentStageLevel >= 100)
+        ? static_cast<int32_t>(_currentStageLevel / 100) - 1 : -1;
+    logger->info("[FixStats] Our radiation penalty {}; re-application suspended at stage index {}.",
+        hadOurPenalty ? "removed" : "was already clear", _specialSuspendStage);
+
+    struct AV { RE::ActorValueInfo* info; const char* name; };
+    const AV specials[] = {
+        { av->strength, "Strength" }, { av->perception, "Perception" }, { av->endurance, "Endurance" },
+        { av->charisma, "Charisma" }, { av->intelligence, "Intelligence" }, { av->agility, "Agility" },
+        { av->luck, "Luck" },
+    };
+
+    int  totalRelieved = 0;
+    bool stillFloored  = false;
+    for (const auto& s : specials)
+    {
+        if (!s.info) continue;
+        const float perm = player->GetPermanentActorValue(*s.info);
+        if (perm < 1.0f) continue;
+        const float before = player->GetActorValue(*s.info);
+        if (before >= perm - 0.01f) continue;
+
+        player->ModActorValue(RE::ACTOR_VALUE_MODIFIER::kTemporary, *s.info,
+            static_cast<float>(kFixStatsReliefPerPress));
+        const float after0 = player->GetActorValue(*s.info);
+        if (after0 > perm)
+            player->ModActorValue(RE::ACTOR_VALUE_MODIFIER::kTemporary, *s.info, perm - after0);
+        const float after  = player->GetActorValue(*s.info);
+        const int   gained = static_cast<int>(after - before + 0.5f);
+        if (gained > 0) totalRelieved += gained;
+        if (after < perm - 0.5f) stillFloored = true;
+        logger->info("[FixStats] {}: base {:.0f}, {:.0f} -> {:.0f} (+{}){}.",
+            s.name, perm, before, after, gained, (after < perm - 0.5f) ? " [still down]" : "");
+    }
+
+    std::vector<std::string> causes;
+    auto addCause = [&](const char* nm)
+    {
+        if (!nm || !*nm || causes.size() >= 6) return;
+        for (const auto& c : causes) if (c == nm) return;
+        causes.emplace_back(nm);
+    };
+    if (auto* list = static_cast<RE::MagicTarget*>(player)->GetActiveEffectList())
+    {
+        for (auto& handle : list->data)
+        {
+            RE::ActiveEffect* ae = handle.get();
+            if (!ae || !ae->effect) continue;
+            RE::EffectSetting* es = ae->effect->effectSetting;
+            if (!es || !es->data.primaryAV) continue;
+            RE::ActorValueInfo* pav = es->data.primaryAV;
+            const bool isSpecial =
+                pav == av->strength || pav == av->perception || pav == av->endurance ||
+                pav == av->charisma || pav == av->intelligence || pav == av->agility || pav == av->luck;
+            if (!isSpecial) continue;
+            const bool lowers =
+                es->data.flags.any(RE::EffectSetting::EffectSettingData::Flag::kDetrimental) ||
+                ae->magnitude < 0.0f;
+            if (!lowers) continue;
+            const char* nm = ae->spell ? ae->spell->GetFullName() : nullptr;
+            if (!nm || !*nm) nm = es->GetFullName();
+            addCause(nm);
+        }
+    }
+
+    std::vector<std::string> report;
+    if (hadOurPenalty)
+        report.emplace_back("Radiation sickness penalty cleared. It won't return until your radiation level changes.");
+
+    if (totalRelieved > 0)
+    {
+        char m[96];
+        std::snprintf(m, sizeof(m), "Restored +%d to your SPECIAL stats.%s", totalRelieved,
+            stillFloored ? " Press again to recover more." : "");
+        report.emplace_back(m);
+    }
+    else if (stillFloored)
+    {
+        report.emplace_back("Chipping away at a heavy SPECIAL debuff - keep pressing to recover it.");
+    }
+
+    if (!causes.empty())
+    {
+        std::string msg = "Lowered by: ";
+        for (size_t i = 0; i < causes.size(); ++i) { if (i) msg += ", "; msg += causes[i]; }
+        report.push_back(msg);
+        report.emplace_back("These are NOT from this mod - eat, drink, sleep, or treat illness to clear them.");
+        logger->warn("[FixStats] Foreign SPECIAL debuffs active -> {}", msg);
+    }
+    else if (totalRelieved == 0 && !stillFloored && !hadOurPenalty)
+    {
+        report.emplace_back("Your SPECIAL stats look healthy - nothing to fix.");
+    }
+
+    if (report.empty())
+        report.emplace_back("Your SPECIAL stats look healthy - nothing to fix.");
+
+    if (!RadHud::GetSingleton().ShowSpecialInfo(report))
+        for (const auto& line : report) Notify(line.c_str(), false);
+}
+
+
+void RadiationEngine::DebugGiveItem(uint32_t formID, const char* plugin, int count)
+{
+    auto* dh = RE::TESDataHandler::GetSingleton();
+    auto* player = RE::PlayerCharacter::GetSingleton();
+    if (!dh || !player) return;
+    RE::TESForm* form = dh->LookupForm(formID, plugin);
+    const bool bound = form && (form->GetFormType() == RE::ENUM_FORM_ID::kALCH ||
+                                form->GetFormType() == RE::ENUM_FORM_ID::kMISC ||
+                                form->GetFormType() == RE::ENUM_FORM_ID::kARMO ||
+                                form->GetFormType() == RE::ENUM_FORM_ID::kWEAP ||
+                                form->GetFormType() == RE::ENUM_FORM_ID::kAMMO);
+    auto* obj = bound ? static_cast<RE::TESBoundObject*>(form) : nullptr;
+    if (!obj) { Notify("[DEBUG] item not found.", false); return; }
+    player->AddObjectToContainer(obj, nullptr, count, nullptr, RE::ITEM_REMOVE_REASON::kNone);
+    Notify("[DEBUG] item(s) added to inventory.", false);
+}
+
+
+void RadiationEngine::DebugForceWeatherByForm(const std::string& spec)
+{
+    auto dlog = Log();
+    const auto bar = spec.find('|');
+    if (bar == std::string::npos) { dlog->warn("[DIAG] forceweather: bad spec '{}'.", spec); return; }
+    const std::string plugin = spec.substr(0, bar);
+    const std::uint32_t id = static_cast<std::uint32_t>(std::strtoul(spec.c_str() + bar + 1, nullptr, 16));
+
+    auto* dh  = RE::TESDataHandler::GetSingleton();
+    auto* sky = RE::Sky::GetSingleton();
+    if (!dh || !sky) { dlog->warn("[DIAG] forceweather: no data handler / sky."); return; }
+
+    RE::TESForm* f = dh->LookupForm(id, plugin.c_str());
+    if (!f || f->GetFormType() != RE::ENUM_FORM_ID::kWTHR)
+    {
+        dlog->warn("[DIAG] forceweather: '{}' 0x{:06X} not found or not a weather.", plugin, id);
+        Notify("[DEBUG] weather not found (mod not loaded?).", false);
+        return;
+    }
+    CaptureWeatherReturnTarget();
+    _releaseWeatherOverrideWhenSettled = false;
+    _weatherHandoffSettleTicks = 0;
+    _weatherHandoffWaitTicks = 0;
+    _debugWeatherHold = true;
+    if (auto* sky2 = RE::Sky::GetSingleton())
+        sky2->ForceWeather(static_cast<RE::TESWeather*>(f), true);
+    _weatherForced = true;
+    dlog->warn("[DIAG] forceweather: {} 0x{:06X} applied INSTANTLY (veto hold ON).", plugin, id);
+    Notify("[DEBUG] weather forced (instant, held).", false);
+}
+
+
+void RadiationEngine::DebugPreviewWeather(int idx)
+{
+    auto dlog = Log();
+    dlog->warn("[DIAG] DebugPreviewWeather idx={} (count={}).", idx, kStormTypeCount);
+    if (idx < 0 || idx >= kStormTypeCount) { dlog->warn("[DIAG]   rejected (out of range)."); return; }
+    RE::TESWeather* w = StormSkyWeather(idx, RadCorrectnessPolicy::StormSkyChoice(idx, RadCorrectnessPolicy::kPhaseActive));
+    auto* sky = RE::Sky::GetSingleton();
+    dlog->warn("[DIAG]   weather={} sky={}.", w ? "ok" : "NULL", sky ? "ok" : "NULL");
+    if (w && sky)
+    {
+        RE::TESWeather* prev = sky->currentWeather;
+        dlog->warn("[DIAG]   BeginSmoothWeather...");
+        CaptureWeatherReturnTarget();
+        _debugWeatherHold = true;
+        BeginSmoothWeather(w);
+        dlog->warn("[DIAG]   transition armed.");
+        if (idx == kDustStormIndex && prev && prev != w)
+        {
+            _dustBuildupActive = true;
+            _dustRollElapsed   = 0;
+            dlog->warn("[DIAG]   Dust preview armed (engine-native smooth transition, from 0x{:06X}).",
+                prev->GetFormID());
+        }
+        Notify("[DEBUG] weather transition started (visual).", false);
+    }
+}
+
+
+void RadiationEngine::DebugScanWornMask()
+{
+    auto dlog = Log();
+    auto* player = RE::PlayerCharacter::GetSingleton();
+    if (!player || !player->biped) { dlog->warn("[MaskScan] no player/biped."); Notify("[DEBUG] mask:scan - no biped.", false); return; }
+    auto& biped = *player->biped;
+    const int mouth = static_cast<int>(RE::BIPED_OBJECT::kMouth);
+    dlog->warn("[MaskScan] ==== worn biped scan (mask detection wants slot {} = kMouth) ====", mouth);
+    int count = 0;
+    for (std::size_t i = 0; i < std::size(biped.object); ++i)
+    {
+        RE::TESForm* form = biped.object[i].parent.object;
+        if (!form || form->GetFormType() != RE::ENUM_FORM_ID::kARMO) continue;
+        ++count;
+        const bool fillsMouth = static_cast<RE::TESObjectARMO*>(form)->FillsBipedSlot(mouth);
+        dlog->warn("[MaskScan]   slot[{}] ARMO 0x{:08X}{}", i, form->GetFormID(),
+                   fillsMouth ? "  <-- fills kMouth (WOULD be detected as mask)" : "");
+    }
+    dlog->warn("[MaskScan] ==== {} worn armor(s); IsWearingGasMask()={} ====", count, IsWearingGasMask());
+    Notify("[DEBUG] mask:scan - see FalloutAnomaly.log ([MaskScan]).", false);
+}
+
+
+void RadiationEngine::DebugClearWeather()
+{
+    _debugWeatherHold = false;
+    ForceClearAndSilence();
+    Notify("[DEBUG] weather released (vetoes back on).", false);
+}
+
+
+void RadiationEngine::DebugTime(const std::string& arg)
+{
+    auto* cal = RE::Calendar::GetSingleton();
+    if (!cal || !cal->timeScale || !cal->gameHour) return;
+    if (arg == "freeze")
+    {
+        if (_frozenTimeScale < 0.0f) _frozenTimeScale = cal->timeScale->value;
+        cal->timeScale->value = 0.0f;
+        Notify("[DEBUG] Time frozen.", false);
+    }
+    else if (arg == "resume")
+    {
+        ResumeDebugTime();
+        Notify("[DEBUG] Time resumed.", false);
+    }
+    else if (arg.rfind("hour:", 0) == 0)
+    {
+        cal->gameHour->value = std::clamp(static_cast<float>(std::atof(arg.c_str() + std::strlen("hour:"))), 0.0f, 23.99f);
+        Notify("[DEBUG] Game hour set.", false);
+    }
+}
+
+
+void RadiationEngine::ResumeDebugTime()
+{
+    if (_frozenTimeScale < 0.0f) return;
+    if (auto* cal = RE::Calendar::GetSingleton(); cal && cal->timeScale) cal->timeScale->value = _frozenTimeScale;
+    _frozenTimeScale = -1.0f;
+}
+
+
+void RadiationEngine::DebugApplyNeeds(const std::string& arg)
+{
+    float hunger = -1.0f, thirst = -1.0f, sleep = -1.0f;
+    int disease = -1, stage = 0;
+    if (std::sscanf(arg.c_str(), "%f:%f:%f:%d:%d", &hunger, &thirst, &sleep, &disease, &stage) != 5)
+    {
+        Notify("[DEBUG] needs: expected hunger:thirst:sleep:disease:stage.", false);
+        return;
+    }
+    auto* game = RE::GameVM::GetSingleton();
+    const auto vm = game ? game->GetVM() : nullptr;
+    if (!vm)
+    {
+        Notify("[DEBUG] needs: the script VM is not available.", false);
+        return;
+    }
+    const RE::BSTSmartPointer<RE::BSScript::IStackCallbackFunctor> noCallback;
+    const bool sent = vm->DispatchStaticCall("RadShowcase", "Apply", noCallback, hunger, thirst, sleep, disease, stage);
+    Notify(sent ? "[DEBUG] needs scene applied." : "[DEBUG] needs: RadShowcase.Apply was not found (is the script compiled?).", false);
+}
+
+
+void RadiationEngine::DebugLockWeather()
+{
+    auto* sky = RE::Sky::GetSingleton();
+    if (!sky || !sky->currentWeather) return;
+    CaptureWeatherReturnTarget();
+    _releaseWeatherOverrideWhenSettled = false;
+    _weatherHandoffSettleTicks = 0;
+    _weatherHandoffWaitTicks = 0;
+    _debugWeatherHold = true;
+    sky->ForceWeather(sky->currentWeather, true);
+    _weatherForced = true;
+    Notify("[DEBUG] Weather locked (use Release Forced Weather to free it).", false);
+}
+
+
+void RadiationEngine::KeepPlayerAlive()
+{
+    auto* player = RE::PlayerCharacter::GetSingleton();
+    auto* av = RE::ActorValue::GetSingleton();
+    if (!player || !av || !av->health) return;
+    player->ModActorValue(RE::ACTOR_VALUE_MODIFIER::kDamage, *av->health, 100000.0f);
+}
+
+
+void RadiationEngine::DebugHeal()
+{
+    auto* player = RE::PlayerCharacter::GetSingleton();
+    auto* av = RE::ActorValue::GetSingleton();
+    if (!player || !av) return;
+
+    if (av->rads)
+        player->ModActorValue(RE::ACTOR_VALUE_MODIFIER::kDamage, *av->rads, -100000.0f);
+    _tissueDamage = 0.0f;
+    _permanentTissueDamage = 0.0f;
+    if (_tissueGlobal)          _tissueGlobal->value = 0.0f;
+    if (_permanentTissueGlobal) _permanentTissueGlobal->value = 0.0f;
+    if (av->health)
+        player->ModActorValue(RE::ACTOR_VALUE_MODIFIER::kDamage, *av->health, 100000.0f);
+    Notify("[DEBUG] healed (rads + tissue cleared, HP restored).", false);
+}

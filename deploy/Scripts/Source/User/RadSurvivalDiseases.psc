@@ -1,0 +1,574 @@
+ScriptName RadSurvivalDiseases extends Quest
+
+float Property HourlyRisk = 0.012 Auto
+float Property RiskPerWeakStage = 0.008 Auto
+float Property RiskPerHit = 0.01 Auto
+float Property RiskPerSwim = 0.03 Auto
+float Property RiskPerRadHour = 0.08 Auto
+float Property RiskPerRainHour = 0.02 Auto
+float Property SwimIntervalGameDays = 0.1 Auto
+float Property HitCooldownSeconds = 2.0 Auto
+float Property IncubationHours = 4.0 Auto
+float Property Stage2Hours = 10.0 Auto
+float Property Stage3Hours = 24.0 Auto
+float Property RestCureBaseHours = 4.0 Auto
+float Property ImmunityHours = 24.0 Auto
+bool Property DiseasesEnabled = true Auto Const
+int Property kTuneDiseases = 7 Auto Const
+int Property kTuneBaseRisk = 8 Auto Const
+int Property kTuneRadWeather = 9 Auto Const
+int Property kTuneRain = 10 Auto Const
+int Property kTuneWound = 11 Auto Const
+int Property kTuneSwim = 12 Auto Const
+int Property kTuneTaintedFood = 13 Auto Const
+int Property kTuneTaintedWater = 14 Auto Const
+int Property kTuneContaminated = 15 Auto Const
+bool Property ShowNotifications = true Auto Const
+int Property CurrentStateVersion = 2 Auto Const
+string Property DiseasePlugin = "RadSurvival.esp" Auto Const
+int Property FeverSpellBase = 2076 Auto Const
+int Property WastingSpellBase = 2079 Auto Const
+string Property StormWeatherPlugin = "RadiationOverhaul.esp" Auto Const
+int Property StormWeatherBase = 2112 Auto Const
+int Property StormWeatherCount = 5 Auto Const
+int Property VanillaRadStormFormId = 1850718 Auto Const
+int Property RainClassification = 2 Auto Const
+
+GlobalVariable Property RadSurvival_Risk Auto
+GlobalVariable Property RadSurvival_Disease Auto
+
+FormList Property TaintedFoodList Auto
+FormList Property TaintedWaterList Auto
+FormList Property ContaminatedList Auto
+Keyword Property KeywordTaintedFood Auto
+Keyword Property KeywordTaintedWater Auto
+Keyword Property KeywordContaminated Auto
+Keyword Property KeywordCureItem Auto
+float Property RiskPerTaintedFood = 0.10 Auto
+float Property RiskPerTaintedWater = 0.15 Auto
+float Property RiskPerContaminated = 0.05 Auto
+int Property CureItemFormId = 2092 Auto Const
+int Property FeverPerkBase = 2093 Auto Const
+int Property WastingPerkBase = 2096 Auto Const
+int Property RadAwayFormId = 145218 Auto Const
+
+int DiseaseId = 0
+int DiseaseStage = 0
+int DiseaseCount = 0
+int SavedStateVersion = 0
+float DiseaseProgress = 0.0
+float RiskDebt = 0.0
+float ImmunityUntil = -1.0
+float LastHitRealTime = -1.0
+float NextSwimAllowed = 0.0
+Spell AppliedDiseaseSpell = None
+Perk AppliedDiseasePerk = None
+Form[] RadWeatherForms
+
+float Function Tuned(int aiKey, float afDefault)
+    float raw = RadNatives.TuningOverride(aiKey)
+    if raw > 0.0
+        return raw - 1.0
+    endif
+    return afDefault
+EndFunction
+
+bool Function DiseasesOn()
+    return DiseasesEnabled && Tuned(kTuneDiseases, 1.0) >= 0.5
+EndFunction
+
+Function Tick(float afHours, bool abActive, int aiHungerStage, int aiThirstStage, int aiSleepStage)
+    AccrueRisk(afHours, abActive, aiHungerStage, aiThirstStage, aiSleepStage)
+    AdvanceDisease(afHours, abActive)
+EndFunction
+
+Function DebugSetDisease(int aiDisease, int aiStage, bool abActive)
+    if aiDisease < 0 || aiDisease > 2
+        return
+    endif
+    DiseaseId = aiDisease
+    DiseaseStage = 0
+    DiseaseProgress = 0.0
+    if aiDisease > 0
+        DiseaseStage = aiStage
+        if DiseaseStage < 0
+            DiseaseStage = 0
+        elseif DiseaseStage > 3
+            DiseaseStage = 3
+        endif
+        if DiseaseStage == 1
+            DiseaseProgress = IncubationHours
+        elseif DiseaseStage == 2
+            DiseaseProgress = Stage2Hours
+        elseif DiseaseStage == 3
+            DiseaseProgress = Stage3Hours
+        endif
+    endif
+    RiskDebt = 0.0
+    Reconcile(abActive)
+    MirrorRisk()
+    MirrorDisease()
+EndFunction
+
+Function Resync(bool abActive)
+    EnsureStateVersion()
+    if DiseaseId < 0 || DiseaseId > 2
+        DiseaseId = 0
+    endif
+    if DiseaseStage < 0
+        DiseaseStage = 0
+    elseif DiseaseStage > 3
+        DiseaseStage = 3
+    endif
+    if DiseaseProgress < 0.0
+        DiseaseProgress = 0.0
+    endif
+    RiskDebt = Clamp01(RiskDebt)
+    RadWeatherForms = new Form[0]
+    if NextSwimAllowed < 0.0
+        NextSwimAllowed = 0.0
+    endif
+    Reconcile(abActive)
+    MirrorRisk()
+    MirrorDisease()
+    TraceTaintLists()
+EndFunction
+
+Function Reconcile(bool abActive)
+    Spell wanted = None
+    if abActive && DiseasesOn() && DiseaseId > 0 && DiseaseStage > 0
+        wanted = DiseaseSpellFor(DiseaseId, DiseaseStage)
+    endif
+    Perk wantedPerk = None
+    if wanted && DiseaseId > 0 && DiseaseStage > 0
+        wantedPerk = DiseasePerkFor(DiseaseId, DiseaseStage)
+    endif
+    ApplySpell(wanted)
+    ApplyPerk(wantedPerk)
+EndFunction
+
+Function TryRestCure(float afHours, bool abInterrupted, bool abActive)
+    if DiseaseId <= 0 || abInterrupted || !abActive
+        return
+    endif
+    if afHours < RestCureBaseHours + (DiseaseStage as float)
+        return
+    endif
+    CureDisease()
+EndFunction
+
+Function AccrueRisk(float afHours, bool abActive, int aiHungerStage, int aiThirstStage, int aiSleepStage)
+    if !abActive || !DiseasesOn() || DiseaseId > 0 || afHours <= 0.0
+        return
+    endif
+
+    if IsImmune()
+        RiskDebt = Clamp01(RiskDebt - Tuned(kTuneBaseRisk, HourlyRisk) * afHours)
+        MirrorRisk()
+        return
+    endif
+
+    float hourly = Tuned(kTuneBaseRisk, HourlyRisk) + RiskPerWeakStage * ((aiHungerStage + aiThirstStage + aiSleepStage) as float)
+    RiskDebt = Clamp01(RiskDebt + hourly * afHours)
+    MirrorRisk()
+    if RiskDebt >= 1.0
+        StartDisease(abActive)
+    endif
+EndFunction
+
+bool Function QualifiesAsWound(ObjectReference akTarget, ObjectReference akAggressor, Form akSource, Actor akPlayer)
+    Actor hurt = akTarget as Actor
+    if !akPlayer || !hurt || hurt != akPlayer
+        return false
+    endif
+    Actor attacker = akAggressor as Actor
+    if !attacker || attacker == akPlayer
+        return false
+    endif
+    if akSource as Spell
+        return false
+    endif
+    return true
+EndFunction
+
+Function ExposureHit(bool abActive)
+    float now = Utility.GetCurrentRealTime()
+    if LastHitRealTime > 0.0 && now - LastHitRealTime < HitCooldownSeconds
+        return
+    endif
+    LastHitRealTime = now
+    AddRisk(Tuned(kTuneWound, RiskPerHit), abActive)
+EndFunction
+
+Function ExposureSwim(bool abActive)
+    float now = Utility.GetCurrentGameTime()
+    if NextSwimAllowed > 0.0 && now < NextSwimAllowed
+        return
+    endif
+    NextSwimAllowed = now + SwimIntervalGameDays
+    AddRisk(Tuned(kTuneSwim, RiskPerSwim), abActive)
+EndFunction
+
+Function ExposureWeather(float afHours, bool abActive)
+    if afHours <= 0.0 || !abActive || !DiseasesOn() || DiseaseId > 0
+        return
+    endif
+    Actor player = Game.GetPlayer()
+    if !player || player.IsInInterior()
+        return
+    endif
+    Form sky = Weather.GetCurrentWeather() as Form
+    if !sky
+        return
+    endif
+    if IsRadWeather(sky)
+        AddRisk(Tuned(kTuneRadWeather, RiskPerRadHour) * afHours, abActive)
+        return
+    endif
+    Weather current = sky as Weather
+    if current && current.GetClassification() >= RainClassification
+        AddRisk(Tuned(kTuneRain, RiskPerRainHour) * afHours, abActive)
+    endif
+EndFunction
+
+Function ConsumeItem(Form akItem, int aiCount, bool abActive)
+    if !akItem || aiCount <= 0
+        return
+    endif
+    if IsCureItem(akItem)
+        if DiseaseId <= 0
+            NotifyDisease("nothing to cure")
+            return
+        endif
+        CureDisease()
+        return
+    endif
+    ExposureConsume(akItem, aiCount, abActive)
+EndFunction
+
+bool Function IsCureItem(Form akItem)
+    if !akItem
+        return false
+    endif
+    Potion potion = akItem as Potion
+    if !potion
+        return false
+    endif
+    Form cure = Game.GetFormFromFile(CureItemFormId, DiseasePlugin)
+    if cure && akItem == cure
+        return true
+    endif
+    Form radAway = Game.GetFormFromFile(RadAwayFormId, "Fallout4.esm")
+    if radAway && akItem == radAway
+        return true
+    endif
+    return akItem.HasKeyword(KeywordCureItem)
+EndFunction
+
+int Function ExposureCategory(Form akItem)
+    if ListHas(TaintedFoodList, akItem) || akItem.HasKeyword(KeywordTaintedFood)
+        return 1
+    endif
+    if ListHas(TaintedWaterList, akItem) || akItem.HasKeyword(KeywordTaintedWater)
+        return 2
+    endif
+    if ListHas(ContaminatedList, akItem) || akItem.HasKeyword(KeywordContaminated)
+        return 3
+    endif
+    return 0
+EndFunction
+
+bool Function ListHas(FormList akList, Form akItem)
+    if !akList || !akItem
+        return false
+    endif
+    return akList.HasForm(akItem)
+EndFunction
+
+float Function CategoryRisk(int aiCategory)
+    if aiCategory == 1
+        return Tuned(kTuneTaintedFood, RiskPerTaintedFood)
+    elseif aiCategory == 2
+        return Tuned(kTuneTaintedWater, RiskPerTaintedWater)
+    elseif aiCategory == 3
+        return Tuned(kTuneContaminated, RiskPerContaminated)
+    endif
+    return 0.0
+EndFunction
+
+Function ExposureConsume(Form akItem, int aiCount, bool abActive)
+    if aiCount <= 0 || !abActive || !DiseasesOn() || DiseaseId > 0
+        return
+    endif
+    int category = ExposureCategory(akItem)
+    if category <= 0
+        return
+    endif
+    AddRisk(CategoryRisk(category) * (aiCount as float), abActive)
+    Debug.Trace("[RadSurvivalDiseases] tainted " + akItem + " x" + aiCount + " category " + category)
+EndFunction
+
+Function TraceTaintLists()
+    if !TaintedFoodList || !TaintedWaterList || !ContaminatedList
+        Debug.Trace("[RadSurvivalDiseases] a taint form list is unbound; that category charges nothing")
+    endif
+EndFunction
+
+bool Function IsRadWeather(Form akWeather)
+    if !akWeather
+        return false
+    endif
+    Form[] weathers = RadWeatherForms
+    if !weathers || weathers.Length == 0
+        weathers = ResolveRadWeather()
+    endif
+    int i = 0
+    while i < weathers.Length
+        if weathers[i] == akWeather
+            return true
+        endif
+        i += 1
+    endwhile
+    return false
+EndFunction
+
+Form[] Function ResolveRadWeather()
+    Form[] resolved = new Form[0]
+    Weather vanilla = Game.GetFormFromFile(VanillaRadStormFormId, "Fallout4.esm") as Weather
+    if vanilla
+        resolved.Add(vanilla)
+    else
+        Debug.Trace("[RadSurvivalDiseases] missing vanilla rad weather " + VanillaRadStormFormId)
+    endif
+    int i = 0
+    while i < StormWeatherCount
+        Weather storm = Game.GetFormFromFile(StormWeatherBase + i, StormWeatherPlugin) as Weather
+        if storm
+            resolved.Add(storm)
+        endif
+        i += 1
+    endwhile
+    if resolved.Length == 0
+        Debug.Trace("[RadSurvivalDiseases] no rad weather resolved from " + StormWeatherPlugin)
+        return resolved
+    endif
+    RadWeatherForms = resolved
+    return resolved
+EndFunction
+
+Function AddRisk(float afAmount, bool abActive)
+    if afAmount <= 0.0 || !abActive || !DiseasesOn() || DiseaseId > 0
+        return
+    endif
+    if IsImmune()
+        return
+    endif
+    RiskDebt = Clamp01(RiskDebt + afAmount)
+    MirrorRisk()
+    if RiskDebt >= 1.0
+        StartDisease(abActive)
+    endif
+EndFunction
+
+bool Function IsImmune()
+    if ImmunityUntil < 0.0
+        return false
+    endif
+    return Utility.GetCurrentGameTime() < ImmunityUntil
+EndFunction
+
+float Function Clamp01(float afValue)
+    if afValue < 0.0
+        return 0.0
+    elseif afValue > 1.0
+        return 1.0
+    endif
+    return afValue
+EndFunction
+
+Function StartDisease(bool abActive)
+    DiseaseId = 1
+    if DiseaseCount % 2 == 1
+        DiseaseId = 2
+    endif
+    DiseaseCount += 1
+    DiseaseStage = 0
+    DiseaseProgress = 0.0
+    RiskDebt = 0.0
+    MirrorRisk()
+    MirrorDisease()
+    Reconcile(abActive)
+    NotifyDisease(DiseaseLabel(DiseaseId) + ": something is wrong, rest before it takes hold")
+EndFunction
+
+Function AdvanceDisease(float afHours, bool abActive)
+    if !abActive || !DiseasesOn() || DiseaseId <= 0 || afHours <= 0.0
+        return
+    endif
+
+    DiseaseProgress += afHours
+    int before = DiseaseStage
+    if DiseaseStage == 0 && DiseaseProgress >= IncubationHours
+        DiseaseStage = 1
+    elseif DiseaseStage == 1 && DiseaseProgress >= Stage2Hours
+        DiseaseStage = 2
+    elseif DiseaseStage == 2 && DiseaseProgress >= Stage3Hours
+        DiseaseStage = 3
+    endif
+
+    if DiseaseStage != before
+        Reconcile(abActive)
+        MirrorDisease()
+        NotifyDisease(DiseaseLabel(DiseaseId) + " stage " + DiseaseStage)
+        Debug.Trace("[RadSurvivalDiseases] stage " + DiseaseStage + " progress " + DiseaseProgress)
+    elseif DiseaseStage == 0
+        MirrorDisease()
+    endif
+EndFunction
+
+Function CureDisease()
+    if DiseaseId <= 0
+        return
+    endif
+    string label = DiseaseLabel(DiseaseId)
+    ImmunityUntil = Utility.GetCurrentGameTime() + ImmunityHours / 24.0
+    DiseaseId = 0
+    DiseaseStage = 0
+    DiseaseProgress = 0.0
+    RiskDebt = 0.0
+    ApplySpell(None)
+    ApplyPerk(None)
+    MirrorRisk()
+    MirrorDisease()
+    NotifyDisease("recovered from " + label + ", but vulnerable for a while")
+EndFunction
+
+Function ApplySpell(Spell akWanted)
+    Actor player = Game.GetPlayer()
+    if !player
+        return
+    endif
+    if AppliedDiseaseSpell == akWanted && (!akWanted || player.HasSpell(akWanted))
+        return
+    endif
+    if AppliedDiseaseSpell
+        player.RemoveSpell(AppliedDiseaseSpell)
+    endif
+    if akWanted
+        player.AddSpell(akWanted, false)
+    endif
+    AppliedDiseaseSpell = akWanted
+    Debug.Trace("[RadSurvivalDiseases] ability -> " + akWanted)
+EndFunction
+
+Function ApplyPerk(Perk akWanted)
+    Actor player = Game.GetPlayer()
+    if !player
+        return
+    endif
+    if AppliedDiseasePerk == akWanted && (!akWanted || player.HasPerk(akWanted))
+        return
+    endif
+    if AppliedDiseasePerk
+        player.RemovePerk(AppliedDiseasePerk)
+    endif
+    if akWanted
+        player.AddPerk(akWanted, false)
+    endif
+    AppliedDiseasePerk = akWanted
+EndFunction
+
+Perk Function DiseasePerkFor(int aiDisease, int aiStage)
+    int first = 0
+    if aiDisease == 1
+        first = FeverPerkBase
+    elseif aiDisease == 2
+        first = WastingPerkBase
+    else
+        return None
+    endif
+    if aiStage < 1 || aiStage > 3
+        return None
+    endif
+    Form perkForm = Game.GetFormFromFile(first + aiStage - 1, DiseasePlugin)
+    return perkForm as Perk
+EndFunction
+
+Spell Function DiseaseSpellFor(int aiDisease, int aiStage)
+    int first = 0
+    if aiDisease == 1
+        first = FeverSpellBase
+    elseif aiDisease == 2
+        first = WastingSpellBase
+    else
+        return None
+    endif
+    if aiStage < 1
+        return None
+    endif
+    if aiStage > 3
+        aiStage = 3
+    endif
+    Spell resolved = Game.GetFormFromFile(first + aiStage - 1, DiseasePlugin) as Spell
+    if !resolved
+        Debug.Trace("[RadSurvivalDiseases] missing ability " + (first + aiStage - 1) + " in " + DiseasePlugin)
+    endif
+    return resolved
+EndFunction
+
+string Function DiseaseLabel(int aiDisease)
+    if aiDisease == 1
+        return "fever"
+    elseif aiDisease == 2
+        return "wasting"
+    endif
+    return "illness"
+EndFunction
+
+Function NotifyDisease(string asText)
+    if !ShowNotifications
+        return
+    endif
+    Debug.Notification("Rad survival: " + asText)
+EndFunction
+
+Function EnsureStateVersion()
+    if SavedStateVersion >= CurrentStateVersion
+        return
+    endif
+    if AppliedDiseaseSpell
+        Actor player = Game.GetPlayer()
+        if player
+            player.RemoveSpell(AppliedDiseaseSpell)
+        endif
+    endif
+    DiseaseId = 0
+    DiseaseStage = 0
+    DiseaseCount = 0
+    DiseaseProgress = 0.0
+    RiskDebt = 0.0
+    ImmunityUntil = -1.0
+    AppliedDiseaseSpell = None
+    SavedStateVersion = CurrentStateVersion
+EndFunction
+
+Function MirrorRisk()
+    MirrorToGlobal(RadSurvival_Risk, RiskDebt)
+EndFunction
+
+Function MirrorDisease()
+    float packed = 0.0
+    if DiseaseId > 0
+        packed = (DiseaseId * 10 + DiseaseStage) as float
+        if DiseaseStage == 0 && IncubationHours > 0.0
+            packed += Clamp01(DiseaseProgress / IncubationHours) * 0.45
+        endif
+    endif
+    MirrorToGlobal(RadSurvival_Disease, packed)
+EndFunction
+
+Function MirrorToGlobal(GlobalVariable akTarget, float afValue)
+    if akTarget
+        akTarget.SetValue(afValue)
+    endif
+EndFunction
