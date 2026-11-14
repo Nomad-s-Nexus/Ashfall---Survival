@@ -1,0 +1,12 @@
+{
+  "_comment": "Display names for RadInjury.esp records. tools/patch_full_names.py inserts these after a fo4editor save.",
+  "names": {
+    "RadInjury_Bandage": "Gauze Bandage",
+    "RadInjury_Splint": "Field Splint",
+    "RadInjury_Tourniquet": "Tourniquet",
+    "RadInjury_SutureKit": "Suture Kit",
+    "RadInjury_MedKit": "Field Med Kit",
+    "RadInjury_TreatFx": "First Aid",
+    "RadInjury_Ability": "Limb Injuries"
+  }
+}

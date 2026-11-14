@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"><title>Pathogen scanner</title>
+<style>
+html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent;pointer-events:none}
+body{--pip:#93e8a4;--cyan:#86e6ea;--amber:#f2c46a;--rad:#ff7052;--ink:#dcf5df;--muted:#8fa996}
+#root{position:fixed;left:0;top:0;width:100%;height:100%;pointer-events:none}
+.mark{--c:var(--muted);position:absolute;width:26px;height:26px;margin:-13px 0 0 -13px;display:none;pointer-events:none;filter:drop-shadow(0 0 3px rgba(0,0,0,.85))}
+.mark[data-s="1"]{--c:var(--amber)}
+.mark[data-s="2"],.mark[data-s="3"]{--c:var(--rad)}
+.mark svg{width:100%;height:100%;display:block;overflow:visible;fill:none}
+.mark .disc{fill:rgba(8,15,11,.55);stroke:rgba(220,245,223,.08);stroke-width:1}
+.mark .seg{fill:none;stroke:rgba(220,245,223,.13);stroke-width:6}
+.mark .seg.on{stroke:var(--c)}
+.mark .dot{fill:var(--c);stroke:none}
+.mark[data-s="3"] .seg.on,.mark[data-s="3"] .dot{animation:blink 1s steps(2,start) infinite}
+@keyframes blink{to{opacity:.35}}
+@media (prefers-reduced-motion:reduce){.mark[data-s="3"] .seg.on,.mark[data-s="3"] .dot{animation:none}}
+</style></head>
+<body><div id="root"></div><script>
+var NAMES=['Incubating','Early','Progressing','Critical'];
+var MAX=24,SEGS=4,GAP=16,root=document.getElementById('root'),pool=[];
+function arc(a0,a1){
+ var t0=(a0-90)*Math.PI/180,t1=(a1-90)*Math.PI/180;
+ return 'M'+(32+28*Math.cos(t0)).toFixed(2)+' '+(32+28*Math.sin(t0)).toFixed(2)+'A28 28 0 0 1 '+(32+28*Math.cos(t1)).toFixed(2)+' '+(32+28*Math.sin(t1)).toFixed(2);
+}
+var ICON='<svg viewBox="0 0 64 64" aria-hidden="true"><circle class="disc" cx="32" cy="32" r="24.5"/>';
+for(var k=0;k<SEGS;k++)ICON+='<path class="seg" d="'+arc(k*90+GAP/2,(k+1)*90-GAP/2)+'"/>';
+ICON+='<circle class="dot" cx="32" cy="32" r="5"/></svg>';
+function mark(i){
+ if(pool[i])return pool[i];
+ var e=document.createElement('div');e.className='mark';e.innerHTML=ICON;root.appendChild(e);
+ e._segs=e.querySelectorAll('.seg');e._s=-1;pool[i]=e;return e;
+}
+function clamp01(v){return Math.max(0,Math.min(1,v));}
+function setStage(e,stage){
+ if(e._s===stage)return;
+ e._s=stage;e.setAttribute('data-s',stage);
+ for(var k=0;k<SEGS;k++)e._segs[k].setAttribute('class',k<=stage?'seg on':'seg');
+}
+function render(list){
+ var n=Math.min(list.length,MAX);
+ for(var i=0;i<n;i++){
+  var d=list[i],stage=Math.max(0,Math.min(3,Math.round(+d.s||0))),e=mark(i);
+  e.style.display='block';
+  e.style.left=(clamp01(+d.x)*100)+'%';e.style.top=(clamp01(+d.y)*100)+'%';
+  setStage(e,stage);
+  e.title=NAMES[stage];
+ }
+ for(var j=n;j<pool.length;j++)pool[j].style.display='none';
+}
+window.updateOutbreak=function(json){
+ try{
+  var list=typeof json==='string'?JSON.parse(json):json;
+  render(Array.isArray(list)?list.filter(function(d){return d&&isFinite(+d.x)&&isFinite(+d.y);}):[]);
+ }catch(e){render([]);}
+};
+window.setTheme=function(){};
+</script>
+</body>
+</html>

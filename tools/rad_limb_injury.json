@@ -1,0 +1,376 @@
+{
+  "_comment": "RadInjury.esp contract, checked by tests/verify_limb_injury.py. Form ids are local to RadInjury.esp; Fallout4.esm ids were read with fo4editor 2026-11-08.",
+  "plugin": "RadInjury.esp",
+  "master": "Fallout4.esm",
+  "globals": [
+    {
+      "editorId": "RadInjury_Head",
+      "recordId": "0x000800"
+    },
+    {
+      "editorId": "RadInjury_Torso",
+      "recordId": "0x000801"
+    },
+    {
+      "editorId": "RadInjury_LeftArm",
+      "recordId": "0x000802"
+    },
+    {
+      "editorId": "RadInjury_RightArm",
+      "recordId": "0x000803"
+    },
+    {
+      "editorId": "RadInjury_LeftLeg",
+      "recordId": "0x000804"
+    },
+    {
+      "editorId": "RadInjury_RightLeg",
+      "recordId": "0x000805"
+    },
+    {
+      "editorId": "RadInjury_FxLegs",
+      "recordId": "0x000806"
+    },
+    {
+      "editorId": "RadInjury_FxArms",
+      "recordId": "0x000807"
+    },
+    {
+      "editorId": "RadInjury_FxHead",
+      "recordId": "0x000808"
+    },
+    {
+      "editorId": "RadInjury_FxTorso",
+      "recordId": "0x000809"
+    }
+  ],
+  "ability": {
+    "editorId": "RadInjury_Ability",
+    "recordId": "0x00080F",
+    "spellType": 4
+  },
+  "conditionFunction": 74,
+  "effects": [
+    {
+      "editorId": "RadInjury_SpeedFx1",
+      "recordId": "0x00080A",
+      "actorValue": "0x0002DA",
+      "actorValueName": "SpeedMult",
+      "global": "RadInjury_FxLegs",
+      "tier": 1,
+      "magnitude": -8
+    },
+    {
+      "editorId": "RadInjury_SpeedFx2",
+      "recordId": "0x000810",
+      "actorValue": "0x0002DA",
+      "actorValueName": "SpeedMult",
+      "global": "RadInjury_FxLegs",
+      "tier": 2,
+      "magnitude": -18
+    },
+    {
+      "editorId": "RadInjury_SpeedFx3",
+      "recordId": "0x000811",
+      "actorValue": "0x0002DA",
+      "actorValueName": "SpeedMult",
+      "global": "RadInjury_FxLegs",
+      "tier": 3,
+      "magnitude": -30
+    },
+    {
+      "editorId": "RadInjury_SpeedFx4",
+      "recordId": "0x000812",
+      "actorValue": "0x0002DA",
+      "actorValueName": "SpeedMult",
+      "global": "RadInjury_FxLegs",
+      "tier": 4,
+      "magnitude": -45
+    },
+    {
+      "editorId": "RadInjury_StrengthFx1",
+      "recordId": "0x00080B",
+      "actorValue": "0x0002C2",
+      "actorValueName": "Strength",
+      "global": "RadInjury_FxArms",
+      "tier": 1,
+      "magnitude": -1
+    },
+    {
+      "editorId": "RadInjury_StrengthFx2",
+      "recordId": "0x000813",
+      "actorValue": "0x0002C2",
+      "actorValueName": "Strength",
+      "global": "RadInjury_FxArms",
+      "tier": 2,
+      "magnitude": -2
+    },
+    {
+      "editorId": "RadInjury_StrengthFx3",
+      "recordId": "0x000814",
+      "actorValue": "0x0002C2",
+      "actorValueName": "Strength",
+      "global": "RadInjury_FxArms",
+      "tier": 3,
+      "magnitude": -3
+    },
+    {
+      "editorId": "RadInjury_StrengthFx4",
+      "recordId": "0x000815",
+      "actorValue": "0x0002C2",
+      "actorValueName": "Strength",
+      "global": "RadInjury_FxArms",
+      "tier": 4,
+      "magnitude": -4
+    },
+    {
+      "editorId": "RadInjury_PerceptionFx1",
+      "recordId": "0x00080C",
+      "actorValue": "0x0002C3",
+      "actorValueName": "Perception",
+      "global": "RadInjury_FxHead",
+      "tier": 1,
+      "magnitude": -1
+    },
+    {
+      "editorId": "RadInjury_PerceptionFx2",
+      "recordId": "0x000816",
+      "actorValue": "0x0002C3",
+      "actorValueName": "Perception",
+      "global": "RadInjury_FxHead",
+      "tier": 2,
+      "magnitude": -2
+    },
+    {
+      "editorId": "RadInjury_PerceptionFx3",
+      "recordId": "0x000817",
+      "actorValue": "0x0002C3",
+      "actorValueName": "Perception",
+      "global": "RadInjury_FxHead",
+      "tier": 3,
+      "magnitude": -3
+    },
+    {
+      "editorId": "RadInjury_CarryFx1",
+      "recordId": "0x00080D",
+      "actorValue": "0x0002DC",
+      "actorValueName": "CarryWeight",
+      "global": "RadInjury_FxTorso",
+      "tier": 1,
+      "magnitude": -15
+    },
+    {
+      "editorId": "RadInjury_CarryFx2",
+      "recordId": "0x000818",
+      "actorValue": "0x0002DC",
+      "actorValueName": "CarryWeight",
+      "global": "RadInjury_FxTorso",
+      "tier": 2,
+      "magnitude": -35
+    },
+    {
+      "editorId": "RadInjury_CarryFx3",
+      "recordId": "0x000819",
+      "actorValue": "0x0002DC",
+      "actorValueName": "CarryWeight",
+      "global": "RadInjury_FxTorso",
+      "tier": 3,
+      "magnitude": -60
+    },
+    {
+      "editorId": "RadInjury_APFx1",
+      "recordId": "0x00080E",
+      "actorValue": "0x0002D5",
+      "actorValueName": "ActionPoints",
+      "global": "RadInjury_FxTorso",
+      "tier": 1,
+      "magnitude": -10
+    },
+    {
+      "editorId": "RadInjury_APFx2",
+      "recordId": "0x00081A",
+      "actorValue": "0x0002D5",
+      "actorValueName": "ActionPoints",
+      "global": "RadInjury_FxTorso",
+      "tier": 2,
+      "magnitude": -20
+    },
+    {
+      "editorId": "RadInjury_APFx3",
+      "recordId": "0x00081B",
+      "actorValue": "0x0002D5",
+      "actorValueName": "ActionPoints",
+      "global": "RadInjury_FxTorso",
+      "tier": 3,
+      "magnitude": -35
+    }
+  ],
+  "treatEffect": {
+    "editorId": "RadInjury_TreatFx",
+    "recordId": "0x00081D",
+    "actorValue": "0x000358",
+    "actorValueName": "HealRateMult"
+  },
+  "quest": {
+    "editorId": "RadInjury_Quest",
+    "recordId": "0x00081C",
+    "script": "RadLimbInjuryQuest",
+    "abilityProperty": "Ability"
+  },
+  "workbenchKeyword": "0x102158",
+  "recipeCategory": "0x102150",
+  "items": [
+    {
+      "editorId": "RadInjury_Bandage",
+      "recordId": "0x00081E",
+      "name": "Gauze Bandage",
+      "treatKind": 1,
+      "model": "Ashfall\\FirstAid\\AshBandage.nif",
+      "value": 12,
+      "weight": 0.1,
+      "recipe": {
+        "editorId": "RadInjury_co_Bandage",
+        "recordId": "0x000823",
+        "components": [
+          {
+            "editorId": "c_Cloth",
+            "recordId": "0x1223C7",
+            "count": 2
+          }
+        ]
+      }
+    },
+    {
+      "editorId": "RadInjury_Splint",
+      "recordId": "0x00081F",
+      "name": "Field Splint",
+      "treatKind": 2,
+      "model": "Ashfall\\FirstAid\\AshSplint.nif",
+      "value": 20,
+      "weight": 0.5,
+      "recipe": {
+        "editorId": "RadInjury_co_Splint",
+        "recordId": "0x000824",
+        "components": [
+          {
+            "editorId": "c_Wood",
+            "recordId": "0x01FAC2",
+            "count": 3
+          },
+          {
+            "editorId": "c_Cloth",
+            "recordId": "0x1223C7",
+            "count": 1
+          },
+          {
+            "editorId": "c_Adhesive",
+            "recordId": "0x01FAA5",
+            "count": 1
+          }
+        ]
+      }
+    },
+    {
+      "editorId": "RadInjury_Tourniquet",
+      "recordId": "0x000820",
+      "name": "Tourniquet",
+      "treatKind": 3,
+      "model": "Ashfall\\FirstAid\\AshTourniquet.nif",
+      "value": 25,
+      "weight": 0.2,
+      "recipe": {
+        "editorId": "RadInjury_co_Tourniquet",
+        "recordId": "0x000825",
+        "components": [
+          {
+            "editorId": "c_Cloth",
+            "recordId": "0x1223C7",
+            "count": 1
+          },
+          {
+            "editorId": "c_Rubber",
+            "recordId": "0x01FAB9",
+            "count": 1
+          },
+          {
+            "editorId": "c_Steel",
+            "recordId": "0x01FABD",
+            "count": 1
+          }
+        ]
+      }
+    },
+    {
+      "editorId": "RadInjury_SutureKit",
+      "recordId": "0x000821",
+      "name": "Suture Kit",
+      "treatKind": 4,
+      "model": "Ashfall\\FirstAid\\AshSutureKit.nif",
+      "value": 40,
+      "weight": 0.2,
+      "recipe": {
+        "editorId": "RadInjury_co_SutureKit",
+        "recordId": "0x000826",
+        "components": [
+          {
+            "editorId": "c_Antiseptic",
+            "recordId": "0x01FA96",
+            "count": 1
+          },
+          {
+            "editorId": "c_Steel",
+            "recordId": "0x01FABD",
+            "count": 1
+          },
+          {
+            "editorId": "c_Cloth",
+            "recordId": "0x1223C7",
+            "count": 1
+          }
+        ]
+      }
+    },
+    {
+      "editorId": "RadInjury_MedKit",
+      "recordId": "0x000822",
+      "name": "Field Med Kit",
+      "treatKind": 5,
+      "model": "Ashfall\\FirstAid\\AshMedKit.nif",
+      "value": 120,
+      "weight": 1.0,
+      "recipe": {
+        "editorId": "RadInjury_co_MedKit",
+        "recordId": "0x000827",
+        "components": [
+          {
+            "editorId": "c_Cloth",
+            "recordId": "0x1223C7",
+            "count": 3
+          },
+          {
+            "editorId": "c_Antiseptic",
+            "recordId": "0x01FA96",
+            "count": 2
+          },
+          {
+            "editorId": "c_Adhesive",
+            "recordId": "0x01FAA5",
+            "count": 1
+          },
+          {
+            "editorId": "c_Steel",
+            "recordId": "0x01FABD",
+            "count": 1
+          }
+        ]
+      }
+    }
+  ],
+  "stimpak": "0x023736",
+  "loot": {
+    "recordId": "0x000828",
+    "editorId": "RadInjury_LL_FirstAid",
+    "entries": [["0x00081E", 1], ["0x00081E", 2], ["0x00081F", 1], ["0x000820", 1], ["0x000821", 1], ["0x000822", 1]],
+    "properties": {"FirstAidLoot": "local:0x000828", "MedsLoot": "0x0C4469", "VendorMeds": "0x09C2B0"}
+  }
+}

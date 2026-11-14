@@ -1,0 +1,835 @@
+{
+  "plugin": "RadOutbreak.esp",
+  "masters": [
+    "Fallout4.esm",
+    "RadSurvival.esp"
+  ],
+  "summary": "NPC and companion outbreak contract: records, VMAD bindings, course, medicine, tuning keys and debug bridge. Authored in FO4IDE; a CI test checks the shipped plugin and scripts against this file.",
+  "records": [
+    {
+      "localId": "0x000800",
+      "formKey": "0x02000800",
+      "editorId": "RadOutbreak_Effect",
+      "type": "MGEF",
+      "note": "script archetype, VMAD script RadOutbreakEffect (pre-existing)"
+    },
+    {
+      "localId": "0x000801",
+      "formKey": "0x02000801",
+      "editorId": "RadOutbreak_Infection",
+      "type": "SPEL",
+      "note": "ability, effect 0x000800 (pre-existing)"
+    },
+    {
+      "localId": "0x000802",
+      "formKey": "0x02000802",
+      "editorId": "RadOutbreak_SickFaction",
+      "type": "FACT"
+    },
+    {
+      "localId": "0x000803",
+      "formKey": "0x02000803",
+      "editorId": "RadOutbreak_Quest",
+      "type": "QUST",
+      "flags": 9,
+      "flagsMeaning": "start game enabled | run once",
+      "script": "RadOutbreakQuest"
+    },
+    {
+      "localId": "0x000804",
+      "formKey": "0x02000804",
+      "editorId": "RadOutbreak_Weak2",
+      "type": "MGEF",
+      "archetype": 34,
+      "flags": 2562,
+      "actorValue": "0x0002DA:Fallout4.esm",
+      "actorValueName": "SpeedMult",
+      "castingSoundLevel": 1,
+      "dualCastingScale": 1.0
+    },
+    {
+      "localId": "0x000805",
+      "formKey": "0x02000805",
+      "editorId": "RadOutbreak_Weak3",
+      "type": "MGEF",
+      "archetype": 34,
+      "flags": 2562,
+      "actorValue": "0x0002DA:Fallout4.esm",
+      "actorValueName": "SpeedMult",
+      "castingSoundLevel": 1,
+      "dualCastingScale": 1.0
+    },
+    {
+      "localId": "0x000806",
+      "formKey": "0x02000806",
+      "editorId": "RadOutbreak_MedicineList",
+      "type": "FLST",
+      "items": [
+        "0x023742:Fallout4.esm",
+        "0x0459C5:Fallout4.esm",
+        "0x00082C:RadSurvival.esp"
+      ]
+    },
+    {
+      "localId": "0x000807",
+      "formKey": "0x02000807",
+      "editorId": "RadOutbreak_WeakSpell2",
+      "type": "SPEL",
+      "spellType": 4,
+      "spellTypeName": "Ability",
+      "effect": "0x000804",
+      "magnitude": -20
+    },
+    {
+      "localId": "0x000808",
+      "formKey": "0x02000808",
+      "editorId": "RadOutbreak_WeakSpell3",
+      "type": "SPEL",
+      "spellType": 4,
+      "spellTypeName": "Ability",
+      "effect": "0x000805",
+      "magnitude": -35
+    },
+    {
+      "localId": "0x000809",
+      "formKey": "0x02000809",
+      "editorId": "RadOutbreak_DoctorStation",
+      "type": "FURN",
+      "script": "RadOutbreakDoctorStation",
+      "note": "workshop work object copied from 0x18AF95 WorkshopStoreClinic01; vendor/clinic PRPS zeroed, keyword 0x000812 added, FULL unset (see blockers)"
+    },
+    {
+      "localId": "0x00080A",
+      "formKey": "0x0200080A",
+      "editorId": "RadOutbreak_Snd_Male_CoughLight",
+      "type": "SNDR",
+      "files": [
+        "data\\Sound\\FX\\RadOutbreak\\rad_outbreak_male_cough_light_01.wav",
+        "data\\Sound\\FX\\RadOutbreak\\rad_outbreak_male_cough_light_02.wav",
+        "data\\Sound\\FX\\RadOutbreak\\rad_outbreak_male_cough_light_03.wav"
+      ]
+    },
+    {
+      "localId": "0x00080B",
+      "formKey": "0x0200080B",
+      "editorId": "RadOutbreak_Snd_Male_CoughWet",
+      "type": "SNDR",
+      "files": [
+        "data\\Sound\\FX\\RadOutbreak\\rad_outbreak_male_cough_wet_01.wav",
+        "data\\Sound\\FX\\RadOutbreak\\rad_outbreak_male_cough_wet_02.wav"
+      ]
+    },
+    {
+      "localId": "0x00080C",
+      "formKey": "0x0200080C",
+      "editorId": "RadOutbreak_Snd_Male_Sneeze",
+      "type": "SNDR",
+      "files": [
+        "data\\Sound\\FX\\RadOutbreak\\rad_outbreak_male_sneeze_01.wav",
+        "data\\Sound\\FX\\RadOutbreak\\rad_outbreak_male_sneeze_02.wav"
+      ]
+    },
+    {
+      "localId": "0x00080D",
+      "formKey": "0x0200080D",
+      "editorId": "RadOutbreak_Snd_Male_Groan",
+      "type": "SNDR",
+      "files": [
+        "data\\Sound\\FX\\RadOutbreak\\rad_outbreak_male_groan_01.wav"
+      ]
+    },
+    {
+      "localId": "0x00080E",
+      "formKey": "0x0200080E",
+      "editorId": "RadOutbreak_Snd_Female_CoughLight",
+      "type": "SNDR",
+      "files": [
+        "data\\Sound\\FX\\RadOutbreak\\rad_outbreak_female_cough_light_01.wav",
+        "data\\Sound\\FX\\RadOutbreak\\rad_outbreak_female_cough_light_02.wav",
+        "data\\Sound\\FX\\RadOutbreak\\rad_outbreak_female_cough_light_03.wav"
+      ]
+    },
+    {
+      "localId": "0x00080F",
+      "formKey": "0x0200080F",
+      "editorId": "RadOutbreak_Snd_Female_CoughWet",
+      "type": "SNDR",
+      "files": [
+        "data\\Sound\\FX\\RadOutbreak\\rad_outbreak_female_cough_wet_01.wav",
+        "data\\Sound\\FX\\RadOutbreak\\rad_outbreak_female_cough_wet_02.wav"
+      ]
+    },
+    {
+      "localId": "0x000810",
+      "formKey": "0x02000810",
+      "editorId": "RadOutbreak_Snd_Female_Sneeze",
+      "type": "SNDR",
+      "files": [
+        "data\\Sound\\FX\\RadOutbreak\\rad_outbreak_female_sneeze_01.wav",
+        "data\\Sound\\FX\\RadOutbreak\\rad_outbreak_female_sneeze_02.wav"
+      ]
+    },
+    {
+      "localId": "0x000811",
+      "formKey": "0x02000811",
+      "editorId": "RadOutbreak_Snd_Female_Groan",
+      "type": "SNDR",
+      "files": [
+        "data\\Sound\\FX\\RadOutbreak\\rad_outbreak_female_groan_01.wav"
+      ]
+    },
+    {
+      "localId": "0x000812",
+      "formKey": "0x02000812",
+      "editorId": "RadOutbreak_DoctorStationKeyword",
+      "type": "KYWD"
+    },
+    {
+      "localId": "0x000813",
+      "formKey": "0x02000813",
+      "editorId": "RadOutbreak_Scanner",
+      "type": "MISC",
+      "note": "copy of 0x154AD3 BiometricScanner; FULL set by patch_full_names.py"
+    },
+    {
+      "localId": "0x000814",
+      "formKey": "0x02000814",
+      "editorId": "RadOutbreak_co_Scanner",
+      "type": "COBJ",
+      "createdObject": "0x000813",
+      "workbench": "0x102158:Fallout4.esm (WorkbenchChemlab)",
+      "category": "0x102150:Fallout4.esm (RecipeHealing)",
+      "components": [
+        {
+          "form": "0x01FAB7:Fallout4.esm",
+          "editorId": "c_Plastic",
+          "count": 2
+        },
+        {
+          "form": "0x01FA96:Fallout4.esm",
+          "editorId": "c_Antiseptic",
+          "count": 1
+        },
+        {
+          "form": "0x01FAA0:Fallout4.esm",
+          "editorId": "c_FiberOptics",
+          "count": 1
+        }
+      ],
+      "conditions": []
+    },
+    {
+      "localId": "0x000815",
+      "formKey": "0x02000815",
+      "editorId": "RadOutbreak_DoctorsTier1",
+      "type": "FLST",
+      "items": [
+        "0x045ACD:Fallout4.esm",
+        "0x002EF8:Fallout4.esm",
+        "0x0F246A:Fallout4.esm",
+        "0x18AF90:Fallout4.esm"
+      ]
+    },
+    {
+      "localId": "0x000816",
+      "formKey": "0x02000816",
+      "editorId": "RadOutbreak_DoctorsTier2",
+      "type": "FLST",
+      "items": [
+        "0x020B8E:Fallout4.esm",
+        "0x09A680:Fallout4.esm",
+        "0x027686:Fallout4.esm",
+        "0x02A821:Fallout4.esm"
+      ]
+    },
+    {
+      "localId": "0x000817",
+      "formKey": "0x02000817",
+      "editorId": "RadOutbreak_co_DoctorStation",
+      "type": "COBJ",
+      "createdObject": "0x000809",
+      "workbench": "0x246F85:Fallout4.esm (WorkshopWorkbenchTypeSettlement)",
+      "category": "0x118F69:Fallout4.esm (WorkshopRecipeFilterVendor02Clinic)",
+      "components": [
+        {
+          "form": "0x01FAC2:Fallout4.esm",
+          "editorId": "c_Wood",
+          "count": 5
+        },
+        {
+          "form": "0x01FABD:Fallout4.esm",
+          "editorId": "c_Steel",
+          "count": 3
+        },
+        {
+          "form": "0x00000F:Fallout4.esm",
+          "editorId": "Caps001",
+          "count": 100
+        }
+      ],
+      "conditions": []
+    },
+    {
+      "localId": "0x000818",
+      "formKey": "0x02000818",
+      "editorId": "RadOutbreak_CompanionSickMgef1",
+      "type": "MGEF",
+      "note": "copy of RadSurvival 0x000816; Peak Value Modifier, no HideInUI; name Companion Sick (Early)"
+    },
+    {
+      "localId": "0x00081B",
+      "formKey": "0x0200081B",
+      "editorId": "RadOutbreak_CompanionSickSpell1",
+      "type": "SPEL",
+      "effect": "0x000818",
+      "magnitude": 0,
+      "note": "ability; Pip-Boy active-effects entry for companion stage 1"
+    },
+    {
+      "localId": "0x000819",
+      "formKey": "0x02000819",
+      "editorId": "RadOutbreak_CompanionSickMgef2",
+      "type": "MGEF",
+      "note": "copy of RadSurvival 0x000817; Peak Value Modifier, no HideInUI; name Companion Sick (Worsening)"
+    },
+    {
+      "localId": "0x00081C",
+      "formKey": "0x0200081C",
+      "editorId": "RadOutbreak_CompanionSickSpell2",
+      "type": "SPEL",
+      "effect": "0x000819",
+      "magnitude": 0,
+      "note": "ability; Pip-Boy active-effects entry for companion stage 2"
+    },
+    {
+      "localId": "0x00081A",
+      "formKey": "0x0200081A",
+      "editorId": "RadOutbreak_CompanionSickMgef3",
+      "type": "MGEF",
+      "note": "copy of RadSurvival 0x000818; Peak Value Modifier, no HideInUI; name Companion Sick (Critical)"
+    },
+    {
+      "localId": "0x00081D",
+      "formKey": "0x0200081D",
+      "editorId": "RadOutbreak_CompanionSickSpell3",
+      "type": "SPEL",
+      "effect": "0x00081A",
+      "magnitude": 0,
+      "note": "ability; Pip-Boy active-effects entry for companion stage 3"
+    }
+  ],
+  "vanillaForms": [
+    {
+      "form": "0x013794:Fallout4.esm",
+      "editorId": "ActorTypeNPC",
+      "type": "KYWD",
+      "source": "fo4editor search_records, Fallout4.esm"
+    },
+    {
+      "form": "0x02CB73:Fallout4.esm",
+      "editorId": "ActorTypeRobot",
+      "type": "KYWD",
+      "source": "fo4editor search_records, Fallout4.esm"
+    },
+    {
+      "form": "0x023C01:Fallout4.esm",
+      "editorId": "CurrentCompanionFaction",
+      "type": "FACT",
+      "source": "fo4editor search_records, Fallout4.esm"
+    },
+    {
+      "form": "0x021B18:Fallout4.esm",
+      "editorId": "IsSleepFurniture",
+      "type": "KYWD",
+      "source": "fo4editor search_records, Fallout4.esm"
+    },
+    {
+      "form": "0x023742:Fallout4.esm",
+      "editorId": "RadAway",
+      "type": "ALCH",
+      "source": "fo4editor search_records, Fallout4.esm; tools/rad_diseases.json"
+    },
+    {
+      "form": "0x0459C5:Fallout4.esm",
+      "editorId": "Addictol",
+      "type": "ALCH",
+      "source": "fo4editor search_records, Fallout4.esm"
+    },
+    {
+      "form": "0x0002DA:Fallout4.esm",
+      "editorId": "SpeedMult",
+      "type": "AVIF",
+      "source": "fo4editor, Fallout4.esm; tools/rad_diseases.json"
+    },
+    {
+      "form": "0x000800:RadSurvival.esp",
+      "editorId": "RadSurvivalQuest",
+      "type": "QUST",
+      "source": "fo4editor, RadSurvival.esp"
+    },
+    {
+      "form": "0x000823:RadSurvival.esp",
+      "editorId": "RadSurvival_Disease",
+      "type": "GLOB",
+      "source": "fo4editor; tools/rad_diseases.json"
+    },
+    {
+      "form": "0x00082C:RadSurvival.esp",
+      "editorId": "RadSurvival_CureItem",
+      "type": "ALCH",
+      "source": "fo4editor; tools/rad_diseases.json"
+    },
+    {
+      "form": "0x000827:RadSurvival.esp",
+      "editorId": "RadSurvival_Keyword_CureItem",
+      "type": "KYWD",
+      "source": "fo4editor; tools/rad_diseases.json"
+    },
+    {
+      "form": "0x027686:Fallout4.esm",
+      "editorId": "CompanionCurie",
+      "type": "NPC_",
+      "source": "fo4editor search_records / Fallout4.esm record read"
+    },
+    {
+      "form": "0x02A821:Fallout4.esm",
+      "editorId": "V81_JacobForsythe",
+      "type": "NPC_",
+      "source": "fo4editor search_records / Fallout4.esm record read"
+    },
+    {
+      "form": "0x020B8E:Fallout4.esm",
+      "editorId": "DoctorSun",
+      "type": "NPC_",
+      "source": "fo4editor search_records / Fallout4.esm record read"
+    },
+    {
+      "form": "0x09A680:Fallout4.esm",
+      "editorId": "DoctorAmari",
+      "type": "NPC_",
+      "source": "fo4editor search_records / Fallout4.esm record read"
+    },
+    {
+      "form": "0x045ACD:Fallout4.esm",
+      "editorId": "DoctorCarrington",
+      "type": "NPC_",
+      "source": "fo4editor search_records / Fallout4.esm record read"
+    },
+    {
+      "form": "0x002EF8:Fallout4.esm",
+      "editorId": "DoctorDuff",
+      "type": "NPC_",
+      "source": "fo4editor search_records / Fallout4.esm record read"
+    },
+    {
+      "form": "0x0F246A:Fallout4.esm",
+      "editorId": "MS17DoctorPatricia",
+      "type": "NPC_",
+      "source": "fo4editor search_records / Fallout4.esm record read"
+    },
+    {
+      "form": "0x18AF90:Fallout4.esm",
+      "editorId": "WorkshopVendorDoctor01",
+      "type": "NPC_",
+      "source": "fo4editor search_records / Fallout4.esm record read"
+    },
+    {
+      "form": "0x18AF95:Fallout4.esm",
+      "editorId": "WorkshopStoreClinic01",
+      "type": "FURN",
+      "source": "fo4editor search_records / Fallout4.esm record read"
+    },
+    {
+      "form": "0x18AF9A:Fallout4.esm",
+      "editorId": "workshop_co_StoreClinic01",
+      "type": "COBJ",
+      "source": "fo4editor search_records / Fallout4.esm record read"
+    },
+    {
+      "form": "0x154AD3:Fallout4.esm",
+      "editorId": "BiometricScanner",
+      "type": "MISC",
+      "source": "fo4editor search_records / Fallout4.esm record read"
+    },
+    {
+      "form": "0x058AAF:Fallout4.esm",
+      "editorId": "co_chem_Radaway",
+      "type": "COBJ",
+      "source": "fo4editor search_records / Fallout4.esm record read"
+    },
+    {
+      "form": "0x1C88E4:Fallout4.esm",
+      "editorId": "NPCDogmeatSneeze",
+      "type": "SNDR",
+      "source": "fo4editor search_records / Fallout4.esm record read"
+    },
+    {
+      "form": "0x1CD02B:Fallout4.esm",
+      "editorId": "BlockPlayerActivation",
+      "type": "KYWD",
+      "source": "fo4editor search_records / Fallout4.esm record read"
+    },
+    {
+      "form": "0x02058E:Fallout4.esm",
+      "editorId": "WorkshopParent quest",
+      "type": "QUST",
+      "source": "fo4editor search_records / Fallout4.esm record read"
+    },
+    {
+      "form": "0x020592:Fallout4.esm",
+      "editorId": "WorkshopWorkObject",
+      "type": "KYWD",
+      "source": "fo4editor search_records / Fallout4.esm record read"
+    },
+    {
+      "form": "0x0EA85C:Fallout4.esm",
+      "editorId": "MTCoughing",
+      "type": "IDLE",
+      "source": "fo4editor search_records Cough + get_record_details, Fallout4.esm"
+    }
+  ],
+  "effectScript": {
+    "record": "0x000800",
+    "script": "RadOutbreakEffect",
+    "objectProperties": {
+      "OutbreakQuest": "0x000803:RadOutbreak.esp",
+      "SickFaction": "0x000802:RadOutbreak.esp",
+      "InfectionSpell": "0x000801:RadOutbreak.esp",
+      "Weakness2Spell": "0x000807:RadOutbreak.esp",
+      "Weakness3Spell": "0x000808:RadOutbreak.esp",
+      "MedicineList": "0x000806:RadOutbreak.esp",
+      "SleepFurnitureKeyword": "0x021B18:Fallout4.esm",
+      "MaleCoughLight": "0x00080A:RadOutbreak.esp",
+      "MaleCoughWet": "0x00080B:RadOutbreak.esp",
+      "MaleSneeze": "0x00080C:RadOutbreak.esp",
+      "MaleGroan": "0x00080D:RadOutbreak.esp",
+      "FemaleCoughLight": "0x00080E:RadOutbreak.esp",
+      "FemaleCoughWet": "0x00080F:RadOutbreak.esp",
+      "FemaleSneeze": "0x000810:RadOutbreak.esp",
+      "FemaleGroan": "0x000811:RadOutbreak.esp",
+      "CoughIdle": "0x0EA85C:Fallout4.esm"
+    },
+    "floatProperties": {
+      "IncubationHours": 6.0,
+      "EarlyUntilHours": 18.0,
+      "ProgressUntilHours": 36.0,
+      "FinalUntilHours": 60.0,
+      "ImmunityHours": 72.0,
+      "DeathChance": 0.35,
+      "SignIntervalSeconds": 20.0,
+      "SignRadius": 1500.0,
+      "BedSearchRadius": 3000.0,
+      "DeathNoticeRadius": 2000.0
+    },
+    "constProperties": {
+      "kTuneDeaths": 18
+    },
+    "boolProperties": {
+      "BedRestEnabled": true
+    },
+    "intProperties": {
+      "BedMaxTries": 3
+    }
+  },
+  "questScript": {
+    "record": "0x000803",
+    "script": "RadOutbreakQuest",
+    "objectProperties": {
+      "ActorTypeNPC": "0x013794:Fallout4.esm",
+      "ActorTypeRobot": "0x02CB73:Fallout4.esm",
+      "SickFaction": "0x000802:RadOutbreak.esp",
+      "CompanionFaction": "0x023C01:Fallout4.esm",
+      "InfectionSpell": "0x000801:RadOutbreak.esp",
+      "PlayerDisease": "0x000823:RadSurvival.esp",
+      "Diseases": "0x000800:RadSurvival.esp",
+      "Survival": "0x000800:RadSurvival.esp",
+      "StationKeyword": "0x000812:RadOutbreak.esp",
+      "CompanionNotice1": "0x00081B:RadOutbreak.esp",
+      "CompanionNotice2": "0x00081C:RadOutbreak.esp",
+      "CompanionNotice3": "0x00081D:RadOutbreak.esp",
+      "MedicineList": "0x000806:RadOutbreak.esp",
+      "RadAway": "0x023742:Fallout4.esm",
+      "Addictol": "0x0459C5:Fallout4.esm",
+      "CureItem": "0x00082C:RadSurvival.esp",
+      "KeywordCureItem": "0x000827:RadSurvival.esp"
+    },
+    "floatProperties": {
+      "ScanRadius": 3000.0,
+      "SpreadRadius": 400.0,
+      "SpreadPerHour0": 0.02,
+      "SpreadPerHour1": 0.05,
+      "SpreadPerHour2": 0.15,
+      "SpreadPerHour3": 0.15,
+      "AmbientPerHour": 0.002,
+      "ContactRiskPerHour": 0.02,
+      "MaxCatchUpHours": 24.0,
+      "StationRadius": 3000.0,
+      "PreventBase": 0.15,
+      "PreventPerTier": 0.15,
+      "TreatPerHour": 0.05,
+      "SyncStaleHours": 2.0
+    },
+    "intProperties": {
+      "MaxActors": 96
+    },
+    "customEvent": "OutbreakCommand",
+    "tickGameHours": 1.0,
+    "constProperties": {
+      "RadAwayMaxStage": 1,
+      "AddictolMaxStage": 2
+    }
+  },
+  "stages": {
+    "factionEditorId": "RadOutbreak_SickFaction",
+    "absent": "healthy",
+    "ranks": {
+      "0": "incubating",
+      "1": "early",
+      "2": "progress",
+      "3": "final",
+      "4": "recovered and immune"
+    },
+    "weakness": {
+      "2": {
+        "spell": "0x000807",
+        "magnitude": -20
+      },
+      "3": {
+        "spell": "0x000808",
+        "magnitude": -35
+      }
+    },
+    "companionsDie": false,
+    "deathRequiresTuningKey": 18
+  },
+  "medicine": [
+    {
+      "item": "RadAway",
+      "form": "0x023742:Fallout4.esm",
+      "maxStage": 1
+    },
+    {
+      "item": "Addictol",
+      "form": "0x0459C5:Fallout4.esm",
+      "maxStage": 2
+    },
+    {
+      "item": "RadSurvival_CureItem",
+      "form": "0x00082C:RadSurvival.esp",
+      "maxStage": 3
+    },
+    {
+      "item": "keyword RadSurvival_Keyword_CureItem",
+      "form": "0x000827:RadSurvival.esp",
+      "maxStage": 3,
+      "note": "checked in OnItemAdded but only fires for items in MedicineList"
+    }
+  ],
+  "tuning": [
+    {
+      "key": 16,
+      "name": "OutbreakEnabled",
+      "kind": "toggle",
+      "reference": 1.0,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "key": 17,
+      "name": "OutbreakSpread",
+      "kind": "scale",
+      "reference": 1.0,
+      "min": 0,
+      "max": 5
+    },
+    {
+      "key": 18,
+      "name": "OutbreakDeaths",
+      "kind": "toggle",
+      "reference": 1.0,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "key": 19,
+      "name": "OutbreakAmbient",
+      "kind": "rate",
+      "reference": 0.002,
+      "min": 0,
+      "max": 0.05
+    }
+  ],
+  "debug": {
+    "script": "RadOutbreakQuest",
+    "function": "DebugCommand",
+    "signature": "int Function DebugCommand(int aiCommand) global",
+    "questResolve": {
+      "id": "0x00000803",
+      "plugin": "RadOutbreak.esp"
+    },
+    "commands": {
+      "1": "infect the nearest eligible healthy NPC",
+      "2": "advance nearby infected actors one stage",
+      "3": "cure nearby infected actors (to immune)",
+      "4": "trace and notify counts by stage"
+    }
+  },
+  "sounds": {
+    "folder": "deploy/Sound/FX/RadOutbreak",
+    "manifest": "deploy/Sound/FX/RadOutbreak/manifest.json",
+    "descriptors": [
+      {
+        "property": "MaleCoughLight",
+        "record": "0x00080A",
+        "sex": "male",
+        "kind": "CoughLight"
+      },
+      {
+        "property": "MaleCoughWet",
+        "record": "0x00080B",
+        "sex": "male",
+        "kind": "CoughWet"
+      },
+      {
+        "property": "MaleSneeze",
+        "record": "0x00080C",
+        "sex": "male",
+        "kind": "Sneeze"
+      },
+      {
+        "property": "MaleGroan",
+        "record": "0x00080D",
+        "sex": "male",
+        "kind": "Groan"
+      },
+      {
+        "property": "FemaleCoughLight",
+        "record": "0x00080E",
+        "sex": "female",
+        "kind": "CoughLight"
+      },
+      {
+        "property": "FemaleCoughWet",
+        "record": "0x00080F",
+        "sex": "female",
+        "kind": "CoughWet"
+      },
+      {
+        "property": "FemaleSneeze",
+        "record": "0x000810",
+        "sex": "female",
+        "kind": "Sneeze"
+      },
+      {
+        "property": "FemaleGroan",
+        "record": "0x000811",
+        "sex": "female",
+        "kind": "Groan"
+      }
+    ],
+    "selection": {
+      "0": "sneeze occasionally (1 in 3 of signs)",
+      "1": "cough_light, sneeze 1 in 4",
+      "2": "cough_wet",
+      "3": "groan 1 in 3 else cough_wet"
+    },
+    "sexSource": "Patient.GetActorBase().GetSex() == 1 is female"
+  },
+  "doctor": {
+    "station": "0x000809",
+    "script": "RadOutbreakDoctorStation",
+    "keyword": "0x000812",
+    "recipe": "0x000817",
+    "scriptProperties": {
+      "WorkshopParent": "0x02058E:Fallout4.esm",
+      "DoctorsTier1": "0x000815:RadOutbreak.esp",
+      "DoctorsTier2": "0x000816:RadOutbreak.esp"
+    },
+    "tierRule": "2 if base in DoctorsTier2, 1 if in DoctorsTier1, 0 otherwise, -1 if unassigned or dead (GetActorRefOwner)",
+    "prevention": "chance x (1 - (PreventBase + PreventPerTier * tier)) for covered healthy actors and for the player contact risk",
+    "treatment": "covered sick actor with stage <= tier+1 and tier >= 1: TreatPerHour * tier * hours chance of OutbreakCommand 3",
+    "coverage": "station within StationRadius (3000) of the actor; highest tier wins"
+  },
+  "faction": {
+    "localId": "0x000802",
+    "editorId": "RadOutbreak_SickFaction",
+    "ranks": {
+      "0": "incubating",
+      "1": "early",
+      "2": "progress",
+      "3": "final",
+      "4": "recovered"
+    }
+  },
+  "scanner": {
+    "localId": "0x000813",
+    "editorId": "RadOutbreak_Scanner",
+    "recipe": "0x000814",
+    "displayName": "Pathogen Scanner",
+    "vanillaItem": "0x154AD3:Fallout4.esm",
+    "vanillaItemNote": "BiometricScanner; carrying it also turns the markers on (user decision 2026-11-08)",
+    "displayNameStatus": "set by tools/patch_full_names.py with tools/rad_outbreak_names.json"
+  },
+  "cureItems": {
+    "note": "keyword-only items cannot pass the FormList event filter; items must be in RadOutbreak_MedicineList",
+    "medicineList": "0x000806",
+    "listed": [
+      "0x023742:Fallout4.esm",
+      "0x0459C5:Fallout4.esm",
+      "0x00082C:RadSurvival.esp"
+    ]
+  },
+  "names": {
+    "manifest": "tools/rad_outbreak_names.json",
+    "patchTool": "tools/patch_full_names.py",
+    "RadOutbreak_DoctorStation": "Doctor Station",
+    "RadOutbreak_Scanner": "Pathogen Scanner",
+    "note": "re-run the patch tool after any fo4editor save of RadOutbreak.esp; the editor write path drops nothing but a stale FULL would reappear only if records are re-copied"
+  },
+  "pipboy": {
+    "note": "companion sickness shown in Pip-Boy active effects; RadOutbreakQuest.RefreshCompanionNotice keeps the spell for the worst companion rank 1-3 on the player, removes the others",
+    "spells": {
+      "1": "0x00081B",
+      "2": "0x00081C",
+      "3": "0x00081D"
+    },
+    "mgefs": {
+      "1": "0x000818",
+      "2": "0x000819",
+      "3": "0x00081A"
+    },
+    "names": {
+      "1": "Companion Sick (Early)",
+      "2": "Companion Sick (Worsening)",
+      "3": "Companion Sick (Critical)"
+    },
+    "descriptions": "MGEF DNAM and SPEL DESC written by tools/patch_full_names.py (manifest tools/rad_outbreak_names.json)",
+    "source": "MGEF and SPEL copied from RadSurvival Fever1-3 (0x000816-0x000818, 0x00081C-0x00081E) with magnitude 0",
+    "inGameDisplay": "UNVERIFIED"
+  },
+  "hardening": {
+    "bedRest": "EnsureInBed skipped for companions/essential/protected and actors in a scene or combat; at most BedMaxTries activations per stage; BedRestEnabled=false leaves weakness-only. Workshop AI override UNVERIFIED in game.",
+    "medicineScan": "RadOutbreakQuest.TryMedicate scans MedicineList via GetItemCount each tick in addition to OnItemAdded",
+    "unloadedCatchUp": "RegSeen per actor; SyncStale sends command 6 to actors not seen for SyncStaleHours; effect Advance recomputes stage from absolute game hours",
+    "protected": "IsResilient = companion or IsEssential or ActorBase.IsProtected(); such actors never die of the sickness. Actor.IsProtected does not exist in Papyrus; ActorBase.IsProtected compiled.",
+    "questHeld": {
+      "native": "bool RadNatives.IsQuestHeld(Form akActor) global native",
+      "source": "src/OutbreakQuestHeld.cpp (registered from main.cpp)",
+      "rule": "true when the reference fills a reference alias (ExtraAliasInstanceArray) of a running quest (kEnabled set, kCompleted clear); ignores Followers 0289E4 and WorkshopParent 02058E (Fallout4.esm) and RadOutbreak_Quest 000803 (RadOutbreak.esp)",
+      "use": "RadOutbreakQuest.Tick infection draw skips actors in a scene or quest-held"
+    },
+    "debugLookup": "int DebugCommand(int aiCommand) global; Game.GetFormFromFile(0x00000803, RadOutbreak.esp)"
+  },
+  "coughVoice": {
+    "decision": "vanilla DN102_Gunner_Coughing1/2 (0x0AE042, 0x0AE043) NOT used",
+    "reason": "voice files exist only for GunnersFemale01, GunnersMale01 (VTYP 0x083C7A), GunnersMale02 in Fallout4 - Voices.ba2; settlers use other voice types (captive settler 0x17AB7A uses MaleEvenToned 0x013AD2). INFO 0AE042 is a scene line conditioned GetIsAliasRef. DLC voice archives not checked. A gunner cough on a settler would sound different, which the user ruled out.",
+    "idle": "MTCoughing 0x0EA85C played with the cough SNDRs when loaded, not in combat/scene, awake, standing",
+    "sndrMatch": {
+      "category": "0x0B0EA4:Fallout4.esm (AudioCategoryVOCPlayer)",
+      "outputModel": "0x0B4058:Fallout4.esm",
+      "staticAttenuationMale": 396,
+      "staticAttenuationFemale": 352,
+      "source": "vanilla NPCHumanDrinkWaterFountainMaleChoke 0x0B24A5 and FemaleChoke 0x0C38EC read in fo4editor; previous category was AudioCategoryNPCDogmeat 0x0AD3A4 and attenuation 1278"
+    }
+  }
+}

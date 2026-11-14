@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"><title>Companion sickness</title><link rel="stylesheet" href="hud_status.css"><script src="hud_core.js"></script><style>#c0,#c1,#c2,#c3{width:auto;min-width:0;height:auto;padding:0;gap:0;background:none;border:0;box-shadow:none}</style></head>
+<body class="theme-phosphor"><div id="root">
+<div class="status" id="c0" role="img" aria-label="You" hidden><div class="core" id="c0Core" style="--c:var(--muted)"></div></div>
+<div class="status" id="c1" role="img" aria-label="Companion" hidden><div class="core" id="c1Core" style="--c:var(--muted)"></div></div>
+<div class="status" id="c2" role="img" aria-label="Companion" hidden><div class="core" id="c2Core" style="--c:var(--muted)"></div></div>
+<div class="status" id="c3" role="img" aria-label="Companion" hidden><div class="core" id="c3Core" style="--c:var(--muted)"></div></div>
+</div><script>
+var root=document.getElementById('root'),_preview=false,_lastData=null,_repVis=null;
+var MAX=3;
+var STAGE_COLORS=['var(--muted)','var(--amber)','var(--rad)','var(--rad)','var(--cyan)'];
+var HEALTHY_COLOR='var(--muted)';
+var STAGE_WORDS=['INCUBATING','EARLY','PROGRESS','FINAL','IMMUNE'];
+var STAGE_FILL=[.25,.5,.75,1,1];
+var DISEASE_NAMES={1:'FEVER',2:'WASTING',3:'DYSENTERY',4:'FOOD POISONING',5:'TETANUS',6:'PNEUMONIA',7:'WOUND INFECTION'};
+var ICON='<path d="M8 7a4 4 0 1 0 8 0a4 4 0 1 0 -8 0"/><path d="M6 21v-2a4 4 0 0 1 4 -4h4a4 4 0 0 1 4 4v2"/>';
+var ILLNESS_ICON='<path d="M7 12a5 5 0 1 0 10 0a5 5 0 1 0 -10 0"/><path d="M12 7v-4"/><path d="M11 3h2"/><path d="M15.536 8.464l2.828 -2.828"/><path d="M17.657 4.929l1.414 1.414"/><path d="M17 12h4"/><path d="M21 11v2"/><path d="M15.535 15.536l2.829 2.828"/><path d="M19.071 17.657l-1.414 1.414"/><path d="M12 17v4"/><path d="M13 21h-2"/><path d="M8.465 15.536l-2.829 2.828"/><path d="M6.343 19.071l-1.413 -1.414"/><path d="M7 12h-4"/><path d="M3 13v-2"/><path d="M8.464 8.464l-2.828 -2.828"/><path d="M4.929 6.343l1.414 -1.413"/>';
+var cores=[PhosCore.build(document.getElementById('c0Core'),ILLNESS_ICON,'YOU')];
+for(var i=1;i<=MAX;i++)cores.push(PhosCore.build(document.getElementById('c'+i+'Core'),ICON,'HEALTHY'));
+function stageOf(s){s=Math.round(+s);return s>=0&&s<=4?s:-1;}
+function setLabel(core,word){var label=core.el.querySelector('small');if(label&&label.firstChild)label.firstChild.nodeValue=word;}
+function renderYou(d,always){
+ var you=d.you||{},packed=Math.max(0,Math.min(73,Math.round(+you.d||0))),id=Math.floor(packed/10),stage=packed%10;
+ var e=document.getElementById('c0'),core=cores[0];
+ e.hidden=id===0&&!always;
+ if(e.hidden)return false;
+ var name=id===7&&stage>=3?'SEPSIS':(DISEASE_NAMES[id]||'ILLNESS'),s=Math.min(stage,3),text=id===0?'HEALTHY':stage>0?name+' '+stage:name;
+ core.el.style.setProperty('--c',id===0?HEALTHY_COLOR:STAGE_COLORS[s]);
+ setLabel(core,'YOU');
+ PhosCore.set(core,id===0?0:STAGE_FILL[s],text,id===0?0:STAGE_FILL[s],id!==0&&s===3?'crit':'');
+ e.title='You: '+(id===0?'healthy':name.toLowerCase()+(stage>0?', stage '+stage+' of 3':', incubating'));
+ e.setAttribute('aria-label',e.title);
+ return true;
+}
+function renderCompanions(d){
+ var always=d.always===true||d.always===1,list=Array.isArray(d.list)?d.list:[],any=renderYou(d,always);
+ for(var i=1;i<=MAX;i++){
+  var e=document.getElementById('c'+i),c=list[i-1];
+  if(!c){e.hidden=true;continue;}
+  var s=stageOf(c.s),name=String(c.n||'Companion');
+  e.hidden=s<0&&!always;
+  if(e.hidden)continue;
+  any=true;
+  var core=cores[i],word=s<0?'HEALTHY':STAGE_WORDS[s];
+  core.el.style.setProperty('--c',s<0?HEALTHY_COLOR:STAGE_COLORS[s]);
+  setLabel(core,word);
+  PhosCore.set(core,s<0?0:STAGE_FILL[s],name,s<0?0:STAGE_FILL[s],s===3?'crit':'');
+  e.title=name+': '+word.toLowerCase();
+  e.setAttribute('aria-label',e.title);
+ }
+ var show=any||_preview;
+ root.classList.toggle('visible',show);
+ if(show!==_repVis){_repVis=show;window.reportVisibility(JSON.stringify({id:WIDGET_ID,visible:show}));}
+}
+window.updateCompanions=function(json){
+ try{
+  var d=typeof json==='string'?JSON.parse(json):json;
+  if(!d||typeof d!=='object'||!Array.isArray(d.list))return;
+  _lastData=d;if(!_preview)renderCompanions(d);
+ }catch(e){}
+};
+window.setEditorPreview=function(json){
+ _preview=json==='1'||json===1||json===true;
+ _frame=0;_token++;
+ if(_preview){renderCompanions(PREVIEW[0]);previewTick(_token);}
+ else if(_lastData)renderCompanions(_lastData);
+ else root.classList.remove('visible');
+};
+var PREVIEW=[
+ {always:true,you:{d:0,o:0},list:[{n:'Dogmeat',s:0},{n:'Piper',s:1},{n:'Cait',s:2}]},
+ {always:true,you:{d:23,o:0},list:[{n:'Nick',s:3},{n:'Hancock',s:4},{n:'Codsworth',s:-1}]}
+];
+var _frame=0,_token=0;
+function previewTick(token){
+ setTimeout(function(){
+  if(!_preview||token!==_token)return;
+  _frame=1-_frame;renderCompanions(PREVIEW[_frame]);previewTick(token);
+ },2000);
+}
+window.setTheme=function(){};
+
+var WIDGET_ID='rad_companions';
+var DEF={xf:22/1920,yf:530/1080,wf:360/1920,hf:98/1080};
+var _want=null,_lastW=0,_lastH=0;
+function flushPos(){
+  if(!_want)return;
+  var W=window.innerWidth,H=window.innerHeight;
+  if(!(W>1)||!(H>1))return;
+  if(W===_lastW&&H===_lastH)return;
+  var K=PhosCore.fit(W,H);
+  root.style.left=(_want.xf*W)+'px';root.style.top=(_want.yf*H)+'px';
+  var explicitSize=_want.w!==null&&_want.h!==null;
+  root.style.width=explicitSize?Math.max(40,(_want.w<=1?_want.w*W:_want.w)/K)+'px':'';
+  root.style.height=explicitSize?Math.max(20,(_want.h<=1?_want.h*H:_want.h)/K)+'px':'';
+  root.style.setProperty('--s',(explicitSize?1:_want.s)*K);root.style.setProperty('--r',(_want.r||0)+'deg');
+  window.reportPosition(JSON.stringify({id:WIDGET_ID,x:_want.xf,y:_want.yf,s:_want.s,r:_want.r||0}));
+  _lastW=W;_lastH=H;
+}
+function applyPos(xf,yf,s,rot,w,h){_want={xf:xf,yf:yf,s:s,r:rot||0,w:(typeof w==='number'&&isFinite(w)&&w>0)?w:null,h:(typeof h==='number'&&isFinite(h)&&h>0)?h:null};_lastW=0;_lastH=0;flushPos();}
+try{new ResizeObserver(function(){flushPos();}).observe(document.documentElement);}catch(e){}
+var _posSet=false;
+window.setHUDPosition=function(json){
+  _posSet=true;
+  try{var p=(typeof json==='string')?JSON.parse(json):json;
+    applyPos(p.x,p.y,(typeof p.s==='number'?p.s:1),(typeof p.r==='number'?p.r:0),
+      (typeof p.w==='number'?p.w:null),(typeof p.h==='number'?p.h:null));}catch(e){}
+};
+window.setLocalHUDLayout=function(json){
+  try{var p=(typeof json==='string')?JSON.parse(json):json;applyPos(p.x,p.y,p.s,p.r);_posSet=true;document.getElementById('root').style.display=p.hidden?'none':'';}catch(e){}
+};
+window.releaseLocalHUDLayout=function(){document.getElementById('root').style.display='';};
+window.reportPosition=window.reportPosition||function(){};
+window.reportVisibility=window.reportVisibility||function(){};
+setTimeout(function(){if(!_posSet)applyPos(DEF.xf,DEF.yf,1,0);},50);
+</script>
+</body>
+</html>

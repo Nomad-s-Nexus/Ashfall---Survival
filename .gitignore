@@ -1,0 +1,16 @@
+build/
+.xmake/
+*.zip
+*.ba2
+*.bsa
+*.psd
+*.blend
+*.blend1
+*.bak
+build-msvc/
+__pycache__/
+*.pyc
+art-src/meds/bakes/
+art-src/meds/previews/
+art-src/firstaid/bakes/
+art-src/firstaid/previews/
